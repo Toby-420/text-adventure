@@ -16,7 +16,7 @@ This is the source code for the game. It is not required to run it, but you can 
 
 This is only made when the program is run, and it stores the user input from the last session
 
-- LICENSE.TXT
+- LICENSE
 
 This is the license for this work which is [GPL](https://www.gnu.org/licenses/gpl-3.0.txt)
 
