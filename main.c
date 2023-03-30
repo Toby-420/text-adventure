@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <windows.h>
+#include <locale.h>
 
 #define player_health 3
 #define enemy_low_health 1
@@ -23,12 +24,10 @@ input_row 	- the row that ncurses will print to (is manually reset to 0 when scr
 i 			- the line history prints on
 */
 
-	
-
-
 
 int main(int argc, char * argv[]) {
 
+	setlocale(LC_ALL, "en_GB.UTF-8");
     HWND consoleWindow = GetConsoleWindow(); // Get handle to console window
     ShowWindow(consoleWindow, SW_MAXIMIZE); // Maximize console window
 
@@ -83,15 +82,18 @@ int main(int argc, char * argv[]) {
     refresh(); // Display the result to the screen
 
     char location[9]; // Make a character array for the location
-    char input[20]; // Declare a character array to hold user input
+    char input[255]; // Declare a character array to hold user input
+	char *str = NULL;
     char main_input[4]; // Declare an array for the main command (e.g. move, view, take, etc...)
     char params[10]; // Declare an array for parameters such as key and drawer
     char * token; // Make a pointer character for the tokens later on
 	char name[20];
 
+
 	signed int input_row = 2; // Keep track of the row for input
 	signed int scroll_row = 0; // Keep track of the row for the scroll window 
-    
+	int len = 0;
+
 	bool nameask = false;
     bool key_visibility = false; // Set the visibility of the key in the room to false (since the drawer is closed by default)
     bool key_inventory = false; // Set the status of the key to not in inventory (since it is in the closed drawer)
@@ -101,6 +103,7 @@ int main(int argc, char * argv[]) {
     bool pictureopen = false; // Set frontroom picture to be closed (passage)
 	bool hiddentreasure = false;
 	bool passagetreasure = false;
+	bool song_played = false;
 
     strcpy(location, "frontroom"); // Set location to be frontroom (the starting room)
 
@@ -160,6 +163,10 @@ int main(int argc, char * argv[]) {
 			nameask=true;
 		}
 		else {}
+		if (song_played==false) {
+		PlaySound("audio/track1.wav", NULL, SND_FILENAME | SND_ASYNC | SND_LOOP);
+		song_played=true;}
+		else {}
 		
         mvwprintw(stdscr, input_row, 0, "> [%s] ", location); // Put a terminal-like prompt with the current location at the top of the screen
 
@@ -210,7 +217,7 @@ int main(int argc, char * argv[]) {
             wrefresh(compass);
             mvwprintw(photo, 3, 2, "        |                 |");
             mvwprintw(photo, 4, 2, "        |                 |");
-            mvwprintw(photo, 5, 2, "        |                 |");
+            mvwprintw(photo, 5, 2, "        |                 |  ");
             mvwprintw(photo, 6, 2, "     /| |                 | |\\");
             mvwprintw(photo, 7, 2, "    / | |                 | | \\");
             mvwprintw(photo, 8, 2, "   //|| |      _____      | |  \\");
@@ -414,6 +421,9 @@ int main(int argc, char * argv[]) {
         }
 
         getstr(input); // Get a string of input from the user
+
+
+	
 
         token = strtok(input, " ");
         if (token != NULL) {
@@ -923,14 +933,12 @@ int main(int argc, char * argv[]) {
             if (strcmp(location, "study") == 0) {
                 if (strcmp(params, "drawer") == 0) {
                     if (key_visibility == false) {
-                        PlaySound("audio/drawer.wav", NULL, SND_ASYNC | SND_FILENAME);
                         mvwprintw(stdscr, input_row + 1, 2, "You open the old, dusty drawer whose handle is nearly broken and you find an old, but shiny key");
                         key_visibility = true;
                     } else {
                         mvwprintw(stdscr, input_row + 1, 2, "There is nothing else in here. Except some Opal Fruit wrappers");
                     }
                 } else if (strcmp(params, "window") == 0) {
-                    PlaySound("audio/wind.wav", NULL, SND_ASYNC | SND_FILENAME);
                     mvwprintw(stdscr, input_row + 1, 2, "You open the creaky window and smell a gust of stale air.");
                     input_row++;
                     mvwprintw(stdscr, input_row + 1, 2, "It seems like it has been closed for years. There is a very sharp looking");
@@ -1075,7 +1083,6 @@ int main(int argc, char * argv[]) {
                     if (key_visibility == true) {
                         mvwprintw(stdscr, input_row + 1, 2, "You pick up the old key");
                         key_inventory = true;
-                        PlaySound("audio/sparkle.wav", NULL, SND_ASYNC | SND_FILENAME);
                     } else {
                         mvwprintw(stdscr, input_row + 1, 2, "There is no key to pick up");
                     }
@@ -1270,6 +1277,7 @@ int main(int argc, char * argv[]) {
         refresh(); // Refresh the screen
     }
 
+	free(str); // free the allocated memory
     delwin(bar); // Delete the bar
 	delwin(compass);
 	delwin(inventory);
