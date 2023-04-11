@@ -423,7 +423,7 @@ int main(int argc, char * argv[]) {
         getstr(input); // Get a string of input from the user
 
 
-	
+		fprintf(history_file, "%s\n", input);
 
         token = strtok(input, " ");
         if (token != NULL) {
@@ -444,7 +444,7 @@ int main(int argc, char * argv[]) {
             params[f] = tolower(params[f]);
         }
 
-        fprintf(history_file, "%s\n", input);
+        
 
         if (strcmp(main_input, "exit") == 0) { // Check if main_input matches the word "exit"
             // Respond to the user
@@ -586,7 +586,7 @@ int main(int argc, char * argv[]) {
                 } else {
                     mvwprintw(stdscr, input_row + 1, 2, "Location not found");
                 }
-            } else if (strcmp(params, "passage") == 0) {
+            } else if (strcmp(params, "passage") == 0 ||  strcmp(params, "picture") == 0){
                 if (strcmp(location, "hidden") == 0) {
                     clear();
                     input_row = 1;
