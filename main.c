@@ -19,10 +19,12 @@
 #define MAX_COMMAND_LENGTH 20
 
 /*
-VARIABLES
-input 		- the user's input (limited to 20 chars for now)
-input_row 	- the row that ncurses will print to (is manually reset to 0 when screen is cleared)
-i 			- the line history prints on
+Compiled with GNU Compiler Collection (MinGW) on Windows 10 with command 'gcc -o play main.c icon/icon.o -lncurses'
+Do I wish this was Linux-based? Yes
+Can I make a Linux-compatible release? Yes, when I have finished the main version of the game
+
+I have a computer running Arch Linux (i use arch btw) and I can make a release for that, but I have to rewrite quite
+a bit of this for it to work which is why I haven't yet
 */
 
 
@@ -115,7 +117,7 @@ int main(int argc, char** argv) {
     bool pictureopen = false; // Set frontroom picture to be closed (passage)
 	bool hiddentreasure = false;
 	bool passagetreasure = false;
-	bool song_played = false;
+	bool soundplayed = false;
 
     strcpy(location, "frontroom"); // Set location to be frontroom (the starting room)
 
@@ -174,8 +176,10 @@ int main(int argc, char** argv) {
 			input_row++;
 			nameask=true;
 		}
+		if (soundplayed==false){
 		ma_engine_play_sound(&engine, "audio/track1.wav", NULL);
-		
+		soundplayed=true;
+		}
         mvwprintw(stdscr, input_row, 0, "> [%s] ", location); // Put a terminal-like prompt with the current location at the top of the screen
 
         if (key_inventory == true) {
@@ -942,12 +946,14 @@ int main(int argc, char** argv) {
             if (strcmp(location, "study") == 0) {
                 if (strcmp(params, "drawer") == 0) {
                     if (key_visibility == false) {
+						ma_engine_play_sound(&engine, "audio/drawer.wav", NULL);
                         mvwprintw(stdscr, input_row + 1, 2, "You open the old, dusty drawer whose handle is nearly broken and you find an old, but shiny key");
                         key_visibility = true;
                     } else {
                         mvwprintw(stdscr, input_row + 1, 2, "There is nothing else in here. Except some Opal Fruit wrappers");
                     }
                 } else if (strcmp(params, "window") == 0) {
+					ma_engine_play_sound(&engine, "audio/wind.wav", NULL);
                     mvwprintw(stdscr, input_row + 1, 2, "You open the creaky window and smell a gust of stale air.");
                     input_row++;
                     mvwprintw(stdscr, input_row + 1, 2, "It seems like it has been closed for years. There is a very sharp looking");
@@ -1089,7 +1095,8 @@ int main(int argc, char** argv) {
 
             if (strcmp(location, "study") == 0) {
                 if (strcmp(params, "key") == 0) {
-                    if (key_visibility == true) {
+                    if (key_visibility == true && key_inventory==false) {
+						ma_engine_play_sound(&engine, "audio/sparkle.wav", NULL);
                         mvwprintw(stdscr, input_row + 1, 2, "You pick up the old key");
                         key_inventory = true;
                     } else {
