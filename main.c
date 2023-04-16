@@ -1,3 +1,4 @@
+#define MINIAUDIO_IMPLEMENTATION
 #include <stdio.h>
 #include <string.h>
 #include <curses.h>
@@ -7,7 +8,7 @@
 #include <stdbool.h>
 #include <time.h>
 #include <windows.h>
-#include <locale.h>
+#include "miniaudio.h"
 
 #define player_health 3
 #define enemy_low_health 1
@@ -25,9 +26,20 @@ i 			- the line history prints on
 */
 
 
-int main(int argc, char * argv[]) {
-
-	setlocale(LC_ALL, "en_GB.UTF-8");
+int main(int argc, char** argv) {
+	
+	ma_result result;
+    ma_engine engine;
+	ma_sound track;
+	
+	FILE * log_file = fopen("log.txt", "w"); // Open file for history
+	
+    result = ma_engine_init(NULL, &engine);
+    if (result != MA_SUCCESS) {
+        fprintf(log_file, "Failed to initialize audio engine.");
+        return -1;
+    }
+	
     HWND consoleWindow = GetConsoleWindow(); // Get handle to console window
     ShowWindow(consoleWindow, SW_MAXIMIZE); // Maximize console window
 
@@ -81,7 +93,7 @@ int main(int argc, char * argv[]) {
     wrefresh(roomdescription);
     refresh(); // Display the result to the screen
 
-    char location[9]; // Make a character array for the location
+    char location[255]; // Make a character array for the location
     char input[255]; // Declare a character array to hold user input
 	char *str = NULL;
     char main_input[4]; // Declare an array for the main command (e.g. move, view, take, etc...)
@@ -162,11 +174,7 @@ int main(int argc, char * argv[]) {
 			input_row++;
 			nameask=true;
 		}
-		else {}
-		if (song_played==false) {
-		PlaySound("audio/track1.wav", NULL, SND_FILENAME | SND_ASYNC | SND_LOOP);
-		song_played=true;}
-		else {}
+		ma_engine_play_sound(&engine, "audio/track1.wav", NULL);
 		
         mvwprintw(stdscr, input_row, 0, "> [%s] ", location); // Put a terminal-like prompt with the current location at the top of the screen
 
@@ -767,6 +775,7 @@ int main(int argc, char * argv[]) {
 					refresh(); // Refresh the screen
 					sleep(2); // Wait for a second to allow the user to read the message
 					delwin(bar); // Delete the bar
+					ma_engine_uninit(&engine);
 					endwin(); // Clear ncurses and return back to previous state
 					return 0; // Exit the program with a successful completion code
 					
@@ -1283,6 +1292,8 @@ int main(int argc, char * argv[]) {
 	delwin(inventory);
 	delwin(roomdescription);
 	delwin(photo);
+	
+    ma_engine_uninit(&engine);
     endwin(); // Clears ncurses and returns back to previous state
     return 0; // Gives successful completion code
 }
