@@ -25,4 +25,4 @@
 <p>Also, if you are able, you can change the code to work for other Operating Systems, and post them on here</p>
 <p>I have absolutely no access to an Apple Macintosh computer unless I use my Grandma's old one, so I will have to let somebody else do that for me</p>
 <h2>Upcoming features</h2>
-<p>Fully implement hidden rooms, sound (preferably with SDL if I can understand it), and a small battle sequence</p>
+<p>Fully implement hidden rooms, audio, and fights</p>
