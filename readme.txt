@@ -1,0 +1,2 @@
+DO NOT GO IN THE HIDDEN ROOM BEHIND THE FIRST HIDDEN ROOM (called passage) AS YOU CANNOT LEAVE
+Remember to use left arrow key instead of the backspace to delete characters. This is part of ncurses and I do not know how to stop it
