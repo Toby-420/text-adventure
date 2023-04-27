@@ -64,7 +64,7 @@ int main(int argc, char ** argv) {
     ma_engine engine;
 	ma_sound track;
 	
-	FILE * log_file = fopen("log.txt", "w"); // Open file for history
+	FILE * log_file = fopen("text\\log.txt", "w"); // Open file for history
 	
   result = ma_engine_init(NULL, &engine);
   if (result != MA_SUCCESS) {
@@ -129,7 +129,7 @@ int main(int argc, char ** argv) {
   char location[255]; // Make a character array for the location
   char input[255]; // Declare a character array to hold user input
   char * str = NULL;
-  char main_input[4]; // Declare an array for the main command (e.g. move, view, take, etc...)
+  char main_input[6]; // Declare an array for the main command (e.g. move, view, take, etc...)
   char params[10]; // Declare an array for parameters such as key and drawer
   char * token; // Make a pointer character for the tokens later on
   char name[20];
@@ -160,7 +160,8 @@ int main(int argc, char ** argv) {
 
   strcpy(location, "frontroom"); // Set location to be frontroom (the starting room)
 
-  FILE * history_file = fopen("history.txt", "w"); // Open file for history
+  FILE * history_file = fopen("text\\history.txt", "w"); // Open file for history
+
 
   while (1) { // Continue looping until user quits
 
@@ -854,7 +855,7 @@ int main(int argc, char ** argv) {
 
     } else if (strcmp(main_input, "save") == 0) {
 
-      FILE * fp = fopen("gamesave.txt", "w");
+      FILE * fp = fopen("text\\gamesave.txt", "w");
       mvwprintw(stdscr, input_row + 1, 2, "Saving game data to gamesave.txt");
       int key_visibility_int = key_visibility; // Set the visibility of the key in the room to false (since the drawer is closed by default)
       int key_inventory_int = key_inventory; // Set the status of the key to not in inventory (since it is in the closed drawer)
@@ -872,9 +873,10 @@ int main(int argc, char ** argv) {
         setup_ui(inventory, photo, compass, roomdescription, input_row);
       }
 
-    } else if (strcmp(main_input, "load") == 0) {
-
-      FILE * fp = fopen("gamesave.txt", "r");
+    } 
+	
+	else if (strcmp(main_input, "load") == 0 || strcmp(argv[1], "load") == 0) {
+      FILE * fp = fopen("text\\gamesave.txt", "r");
       mvwprintw(stdscr, input_row + 1, 2, "Loading game data from gamesave.txt");
       fscanf(fp, "%s %s %d %d %d %d %d %d %d %d", name, location, &key_visibility_int, &key_inventory_int, &bookcases_int, &chestloose_int, &david_int, &pictureopen_int, &hiddentreasure_int, &passagetreasure_int);
       fclose(fp);
@@ -893,8 +895,7 @@ int main(int argc, char ** argv) {
         input_row = 0;
         setup_ui(inventory, photo, compass, roomdescription, input_row);
       }
-
-    } else if (main_input[0] == '\0' || isspace(main_input[0])) {
+	  else if (main_input[0] == '\0' || isspace(main_input[0])) {
       mvwprintw(stdscr, input_row + 1, 2, "I'm not psychic you know");
       input_row += 2;
       if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
