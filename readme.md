@@ -17,6 +17,7 @@
 <p>The game is entirely controlled by keyboard</p>
 <p>Commands are used such as 'move', and 'look' and these are shown at the bottom of the screen</p>
 <p>The only thing worth noting is that backspace does not work, so the left arrow key must be used. I cannot fix this with my current knowledge, but I am working on a fix</p>
+<p>Also, typing a command without any parameter repeats the last parameter as nothing different is set. This could be useful for continuously going east or something as you only have to type 'move east' once, then only 'move'</p>
 <h2>System requirements</h2>
 <p>Currently, the game uses 20mb of RAM since the audio is placeholder and the code is very unoptimised - Code first, optimise later</p>
 <p>Using the Windows 10 compatibility troubleshooter, I was able to still run the game all the way back with the Windows 95 layer, so it should work</p>
