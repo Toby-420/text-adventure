@@ -6,9 +6,7 @@ $latestRelease = Invoke-WebRequest https://api.github.com/repos/Toby-420/text-ad
 
 if ($latestRelease.StatusCode -eq 200) {
     $latestReleaseJson = $latestRelease.Content | ConvertFrom-Json
-    Write-Host "Latest version: $newVersion"
-    $newVersion = [version](([regex]'\d+(\.\d+){0,2}').Matches($newVersion).Value)
-
+    $newVersion = [version](([regex]'^v?(\d+)(\.\d+)*').Matches($latestReleaseJson.tag_name).Value -replace '^v')
     Write-Host "Latest version: $newVersion"
 
     if ($currentVersion -lt $newVersion) {

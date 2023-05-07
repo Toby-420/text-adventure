@@ -1,4 +1,5 @@
 #define MINIAUDIO_IMPLEMENTATION
+#define MIDI_FILE "audio/track1.mid"
 #include <stdio.h>
 #include <string.h>
 #include <curses.h>
@@ -6,9 +7,10 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <stdbool.h>
-#include <time.h>
 #include <windows.h>
+#include "portmidi.h"
 #include "miniaudio.h"
+
 
 #define player_health 3
 #define enemy_low_health 1
@@ -19,7 +21,7 @@
 #define MAX_COMMAND_LENGTH 20
 
 /*
-Compiled with GNU Compiler Collection (MinGW) on Windows 10 with command 'gcc -o play main.c icon/icon.o -lncurses'
+Compiled with GNU Compiler Collection (MinGW) on Windows 10 with command 'gcc -o play main.c icon/icon.o -lncurses -lwinmm'
 Do I wish this was Linux-based? Yes
 Can I make a Linux-compatible release? Yes, when I have finished the main version of the game
 
@@ -27,51 +29,64 @@ I have a computer running Arch Linux (i use arch btw) and I can make a release f
 a bit of this for it to work which is why I haven't yet
 */
 
-int setup_ui(WINDOW * inventory, WINDOW * photo, WINDOW * compass, WINDOW * roomdescription, int input_row) {
-
-  clear();
-  input_row = 1;
-  refresh();
-  WINDOW * bar = newwin(1, COLS, LINES - 1, 0);
-  wbkgd(bar, COLOR_PAIR(1)); // Set colour of the bar
-  wborder(bar, '|', '|', '-', '-', '+', '+', '+', '+'); // Add border
-  wbkgd(inventory, COLOR_PAIR(1)); // Set colour of the bar
-  box(inventory, 0, 0);
-  wrefresh(inventory);
-
-  wbkgd(photo, COLOR_PAIR(1)); // Set colour of the bar
-  box(photo, 0, 0);
-  wrefresh(photo);
-  refresh();
-  wbkgd(compass, COLOR_PAIR(1)); // Set colour of the bar
-  box(compass, 0, 0);
-  wrefresh(compass);
-  refresh();
-  wbkgd(roomdescription, COLOR_PAIR(1)); // Set colour of the bar
-  box(roomdescription, 0, 0);
-  wrefresh(roomdescription);
-  refresh();
-  // Print the title of the bar
-  mvwprintw(bar, 0, 0, "Commands are: view, move, open, take, save, room, help, exit");
-  wrefresh(bar);
-  refresh();
-  return input_row;
+int setup_ui(WINDOW * inventory, WINDOW *bar, WINDOW * photo, WINDOW * compass, WINDOW * roomdescription) {
+	clear();
+	refresh();
+	wborder(bar, '|', '|', '-', '-', '+', '+', '+', '+'); // Add border
+	box(inventory, 0, 0);
+	wrefresh(inventory);
+	box(photo, 0, 0);
+	wrefresh(photo);
+	refresh();
+	box(compass, 0, 0);
+	wrefresh(compass);
+	refresh();
+	box(roomdescription, 0, 0);
+	wrefresh(roomdescription);
+	refresh();
+	mvwprintw(bar, 0, 0, "Commands are: view, move, open, take, save, room, help, exit");
+	wrefresh(bar);
+	refresh();
 }
 
-int main(int argc, char ** argv) {
+int save_game(int input_row, char name[20], char location[255], bool key_visibility, bool key_inventory, bool bookcases, bool chestloose, bool david, bool pictureopen, bool hiddentreasure, bool passagetreasure, int key_visibility_int, int key_inventory_int, int bookcases_int, int chestloose_int, int david_int, int pictureopen_int, int hiddentreasure_int, int passagetreasure_int) {
+	FILE * fp = fopen("text\\gamesave.txt", "w");
+	mvwprintw(stdscr, input_row + 1, 2, "Saving game data to gamesave.txt");
+	key_visibility_int = key_visibility; // Set the visibility of the key in the room to false (since the drawer is closed by default)
+	key_inventory_int = key_inventory; // Set the status of the key to not in inventory (since it is in the closed drawer)
+	bookcases_int = bookcases; // Set the status of the loose bookcase to not found (the player has to find the loose bookcase before opening it)
+	chestloose_int = chestloose; // Set the status of the chest to fully closed (so the player has to open it twice)
+	david_int = david; // Set david's treasure in the inventory to false
+	pictureopen_int = pictureopen; // Set frontroom picture to be closed (passage)
+	hiddentreasure_int = hiddentreasure;
+	passagetreasure_int = passagetreasure;
+	fprintf(fp, "%s %s %d %d %d %d %d %d %d %d", name, location, key_visibility, key_inventory, bookcases, chestloose, david, pictureopen, hiddentreasure, passagetreasure);
+	fclose(fp);
+}
 
-		ma_result result;
-    ma_engine engine;
-	ma_sound track;
-	
-	FILE * log_file = fopen("text\\log.txt", "w"); // Open file for history
-	
-  result = ma_engine_init(NULL, &engine);
-  if (result != MA_SUCCESS) {
-      fprintf(log_file, "Failed to initialize audio engine.");
-      return -1;
-  }
+int load_game(int input_row, char name[20], char location[255], bool key_visibility, bool key_inventory, bool bookcases, bool chestloose, bool david, bool pictureopen, bool hiddentreasure, bool passagetreasure, int key_visibility_int, int key_inventory_int, int bookcases_int, int chestloose_int, int david_int, int pictureopen_int, int hiddentreasure_int, int passagetreasure_int) {
+	FILE * fp = fopen("text\\gamesave.txt", "r");
+	mvwprintw(stdscr, input_row + 1, 2, "Loading game data from gamesave.txt");
+	fscanf(fp, "%s %s %d %d %d %d %d %d %d %d", name, location, & key_visibility_int, & key_inventory_int, & bookcases_int, & chestloose_int, & david_int, & pictureopen_int, & hiddentreasure_int, & passagetreasure_int);
+	fclose(fp);
+	key_visibility = (key_visibility_int == 0) ? false : true;
+	key_inventory = (key_inventory_int == 0) ? false : true;
+	bookcases = (bookcases_int == 0) ? false : true;
+	chestloose = (chestloose_int == 0) ? false : true;
+	david = (david_int == 0) ? false : true;
+	pictureopen = (pictureopen_int == 0) ? false : true;
+	hiddentreasure = (hiddentreasure_int == 0) ? false : true;
+	passagetreasure = (passagetreasure_int == 0) ? false : true;
+	return name, location, key_visibility, key_inventory, bookcases, chestloose, david, pictureopen, hiddentreasure, passagetreasure;
+}
 
+
+int main(int argc, char *argv[]) {
+
+  ma_result result;
+  ma_engine engine;
+  ma_sound track;
+  ma_engine_init(NULL, & engine);
 
   HWND consoleWindow = GetConsoleWindow(); // Get handle to console window
   ShowWindow(consoleWindow, SW_MAXIMIZE); // Maximize console window
@@ -79,45 +94,31 @@ int main(int argc, char ** argv) {
   initscr(); // Start ncurses
   cbreak(); // Allow user input
   keypad(stdscr, TRUE); // Enable arrow keys
-  start_color(); // Enable colour function
-  init_pair(1, COLOR_WHITE, COLOR_BLACK); // Set colours for the bar
-  init_pair(2, COLOR_BLUE, COLOR_BLACK);
   curs_set(1); // Set cursor invisible
-  scrollok(stdscr, TRUE); // Enable scrolling
 
-  clear();
-  refresh();
   WINDOW * bar = newwin(1, COLS, LINES - 1, 0); // Make new window for bar
-  wbkgd(bar, COLOR_PAIR(1)); // Set colour of the bar
   wborder(bar, '|', '|', '-', '-', '+', '+', '+', '+'); // Add border
 
-  WINDOW * inventory = newwin((LINES / 3) + 3, COLS / 4, 1, (COLS * 6) / 8); // Make new window for inventory
-  wbkgd(inventory, COLOR_PAIR(1)); // Set colour of the bar
+  WINDOW * inventory = newwin(LINES / 3 + 3, COLS / 4, 1, COLS * 6 / 8); // Make new window for inventory
   box(inventory, 0, 0); // Add box around inventory
 
   WINDOW * photo = newwin(27, 45, LINES - 28, COLS - 85); // Make new window for player's view
-  wbkgd(photo, COLOR_PAIR(1)); // Set colour of the bar
   box(photo, 0, 0); // Add a box around it
 
   WINDOW * roomdescription = newwin(27, 38, LINES - 28, COLS - 39); // Make a window for description
-  wbkgd(roomdescription, COLOR_PAIR(1)); // Set colour of the bar
   box(roomdescription, 0, 0); // make a box around it
 
-  WINDOW * compass = newwin(9, 17, 1, ((COLS * 6) / 8) - 19); // Make a window for the compass
-  wbkgd(compass, COLOR_PAIR(1)); // Set colour of the bar
+  WINDOW * compass = newwin(9, 17, 1, COLS * 6 / 8 - 19); // Make a window for the compass
   box(compass, 0, 0); // Make a box around compass
 
   mvwprintw(roomdescription, 1, 2, "ROOM DESCRIPTION:"); // Add titles to all the boxes
   mvwprintw(inventory, 1, 2, "INVENTORY:");
   mvwprintw(photo, 1, 2, "PLAYER VIEW:");
   mvwprintw(compass, 1, 2, "COMPASS:");
-  mvwprintw(compass, 5, 8, "O"); // Add center of compass
   mvwprintw(compass, 4, 8, "|"); // Add compass arms
   mvwprintw(compass, 6, 8, "|");
-  mvwprintw(compass, 5, 7, "-");
-  mvwprintw(compass, 5, 9, "-");
-  mvwprintw(compass, 5, 6, "-");
-  mvwprintw(compass, 5, 10, "-");
+  mvwprintw(compass, 5, 6, "-- --");
+  mvwprintw(compass, 5, 8, "O"); // Add center of compass
   mvwprintw(bar, 0, 0, "Commands are: view, move, open, take, save, room, help, exit"); // Add text to bar at bottom of screen
   wrefresh(bar); // Display the windows
   wrefresh(photo);
@@ -135,8 +136,15 @@ int main(int argc, char ** argv) {
   char name[20];
 
   signed int input_row = 2; // Keep track of the row for input
-  signed int scroll_row = 0; // Keep track of the row for the scroll window 
   int len = 0;
+  int key_visibility_int; // Set the visibility of the key in the room to false (since the drawer is closed by default)
+  int key_inventory_int; // Set the status of the key to not in inventory (since it is in the closed drawer)
+  int bookcases_int; // Set the status of the loose bookcase to not found (the player has to find the loose bookcase before opening it)
+  int chestloose_int; // Set the status of the chest to fully closed (so the player has to open it twice)
+  int david_int; // Set david's treasure in the inventory to false
+  int pictureopen_int; // Set frontroom picture to be closed (passage)
+  int hiddentreasure_int;
+  int passagetreasure_int;
 
   bool nameask = false;
   bool key_visibility = false; // Set the visibility of the key in the room to false (since the drawer is closed by default)
@@ -149,26 +157,19 @@ int main(int argc, char ** argv) {
   bool passagetreasure = false;
   bool soundplayed = false;
 
-  int key_visibility_int; // Set the visibility of the key in the room to false (since the drawer is closed by default)
-  int key_inventory_int; // Set the status of the key to not in inventory (since it is in the closed drawer)
-  int bookcases_int; // Set the status of the loose bookcase to not found (the player has to find the loose bookcase before opening it)
-  int chestloose_int; // Set the status of the chest to fully closed (so the player has to open it twice)
-  int david_int; // Set david's treasure in the inventory to false
-  int pictureopen_int; // Set frontroom picture to be closed (passage)
-  int hiddentreasure_int;
-  int passagetreasure_int;
 
   strcpy(location, "frontroom"); // Set location to be frontroom (the starting room)
 
   FILE * history_file = fopen("text\\history.txt", "w"); // Open file for history
 
-
   while (1) { // Continue looping until user quits
 
     if (nameask == false) {
-      mvwprintw(stdscr, input_row, 2, "What do you want to be called? ");
+	  mvwprintw(stdscr, input_row, 2, "The Room of the Locked Door");
+	  input_row++;
+	  mvwprintw(stdscr, input_row, 2, "What do you want to be called? ");
       getstr(name);
-      setup_ui(inventory, photo, compass, roomdescription, input_row);
+      setup_ui(inventory, bar,  photo, compass, roomdescription);
 
       int n = 0;
       while (name[n]) {
@@ -189,6 +190,7 @@ int main(int argc, char ** argv) {
     }
     if (soundplayed == false) {
       PlaySound("audio\\track1.wav", NULL, SND_FILENAME | SND_ASYNC | SND_LOOP); ///////////////////////////////////////////////////////////////////////// use sdl
+	   // Start the playback thread and wait for it to finish
       soundplayed = true;
     }
     mvwprintw(stdscr, input_row, 0, "> [%s] ", location); // Put a terminal-like prompt with the current location at the top of the screen
@@ -395,8 +397,8 @@ int main(int argc, char ** argv) {
         mvwprintw(photo, 23, 2, "                                      ");
         wrefresh(photo);
       } else {
-        mvwprintw(compass, 5, 11, "    ");
-        mvwprintw(compass, 5, 2, "WEST");
+        mvwprintw(compass, 5, 11, "      ");
+        mvwprintw(compass, 5, 2, "WEST ");
 
         wrefresh(compass);
         mvwprintw(photo, 3, 2, "          ___________                   ");
@@ -436,8 +438,8 @@ int main(int argc, char ** argv) {
       wrefresh(roomdescription);
 
     } else {
-      mvwprintw(compass, 5, 2, "    ");
-      mvwprintw(compass, 5, 11, "    ");
+      mvwprintw(compass, 5, 2, "      ");
+      mvwprintw(compass, 5, 11, "      ");
       wrefresh(compass);
 
     }
@@ -531,7 +533,7 @@ int main(int argc, char ** argv) {
       input_row += 2;
       if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3 || input_row + 1 == LINES - 3) {
         input_row = 0;
-        setup_ui(inventory, photo, compass, roomdescription, input_row);
+        setup_ui(inventory, bar,  photo, compass, roomdescription);
       }
 
     } else if (strcmp(main_input, "cory-nonce") == 0) {
@@ -539,7 +541,7 @@ int main(int argc, char ** argv) {
       input_row++;
       if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
         input_row = 0;
-        setup_ui(inventory, photo, compass, roomdescription, input_row);
+        setup_ui(inventory, bar,  photo, compass, roomdescription);
       }
 
     } else if (strcmp(main_input, "move") == 0 || strcmp(main_input, "walk") == 0 || strcmp(main_input, "run") == 0 || strcmp(main_input, "enter") == 0 || strcmp(main_input, "go") == 0) {
@@ -548,7 +550,7 @@ int main(int argc, char ** argv) {
 
         if (strcmp(location, "frontroom") == 0) {
           input_row = 0;
-          setup_ui(inventory, photo, compass, roomdescription, input_row);
+          setup_ui(inventory, bar,  photo, compass, roomdescription);
           mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
           mvwprintw(stdscr, input_row + 1, 2, "You move into a small study. bookcases line the walls, along with a window overseeing the garden");
           input_row++;
@@ -564,14 +566,14 @@ int main(int argc, char ** argv) {
       } else if (strcmp(params, "passage") == 0 || strcmp(params, "picture") == 0) {
         if (strcmp(location, "hidden") == 0) {
           input_row = 0;
-          setup_ui(inventory, photo, compass, roomdescription, input_row);
+          setup_ui(inventory, bar,  photo, compass, roomdescription);
           mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
           mvwprintw(stdscr, input_row + 1, 2, "You move into the tight passage, previously blocked by the darkness");
           strcpy(location, "passage");
         } else if (strcmp(location, "frontroom") == 0) {
           if (pictureopen == true) {
             input_row = 0;
-            setup_ui(inventory, photo, compass, roomdescription, input_row);
+            setup_ui(inventory, bar,  photo, compass, roomdescription);
             mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
             mvwprintw(stdscr, input_row + 1, 2, "You squeeze behind the picture, and find yourself in a small room");
             strcpy(location, "picture");
@@ -590,7 +592,7 @@ int main(int argc, char ** argv) {
         } else if (strcmp(location, "study") == 0) {
           if (bookcases == true) {
             input_row = 0;
-            setup_ui(inventory, photo, compass, roomdescription, input_row);
+            setup_ui(inventory, bar,  photo, compass, roomdescription);
             mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
             mvwprintw(stdscr, input_row + 1, 2, "You slide behind the bookcases and find yourself in a very small room with a chest");
             strcpy(location, "hidden");
@@ -604,7 +606,7 @@ int main(int argc, char ** argv) {
       } else if (strcmp(params, "north") == 0) {
         if (strcmp(location, "study") == 0) {
           input_row = 0;
-          setup_ui(inventory, photo, compass, roomdescription, input_row);
+          setup_ui(inventory, bar,  photo, compass, roomdescription);
           mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
           mvwprintw(stdscr, input_row + 1, 2, "You fall out of the window and die");
           mvwprintw(stdscr, LINES - 2, 0, "EXITING PROGRAM");
@@ -646,7 +648,7 @@ int main(int argc, char ** argv) {
 
         } else if (strcmp(location, "picture") == 0) {
           input_row = 0;
-          setup_ui(inventory, photo, compass, roomdescription, input_row);
+          setup_ui(inventory, bar,  photo, compass, roomdescription);
           mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
           mvwprintw(stdscr, input_row + 1, 2, "You move back into the front room");
           strcpy(location, "frontroom");
@@ -661,14 +663,14 @@ int main(int argc, char ** argv) {
       } else if (strcmp(params, "west") == 0) {
         if (strcmp(location, "study") == 0) {
           input_row = 0;
-          setup_ui(inventory, photo, compass, roomdescription, input_row);
+          setup_ui(inventory, bar,  photo, compass, roomdescription);
           mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
           mvwprintw(stdscr, input_row + 1, 2, "You move back into the front room");
           strcpy(location, "frontroom");
           wrefresh(compass);
         } else if (strcmp(location, "hidden") == 0) {
           input_row = 0;
-          setup_ui(inventory, photo, compass, roomdescription, input_row);
+          setup_ui(inventory, bar,  photo, compass, roomdescription);
           mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
           mvwprintw(stdscr, input_row + 1, 2, "You move back into the study");
           strcpy(location, "study");
@@ -700,7 +702,7 @@ int main(int argc, char ** argv) {
       input_row += 2;
       if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
         input_row = 0;
-        setup_ui(inventory, photo, compass, roomdescription, input_row);
+        setup_ui(inventory, bar,  photo, compass, roomdescription);
       }
 
     } else if (strcmp(main_input, "open") == 0 || strcmp(main_input, "shift") == 0) {
@@ -708,14 +710,14 @@ int main(int argc, char ** argv) {
       if (strcmp(location, "study") == 0) {
         if (strcmp(params, "drawer") == 0) {
           if (key_visibility == false) {
-			ma_engine_play_sound(&engine, "audio/drawer.wav", NULL);
+            ma_engine_play_sound( & engine, "audio/drawer.wav", NULL);
             mvwprintw(stdscr, input_row + 1, 2, "You open the old, dusty drawer whose handle is nearly broken and you find an old, but shiny key");
             key_visibility = true;
           } else {
             mvwprintw(stdscr, input_row + 1, 2, "There is nothing else in here. Except some Opal Fruit wrappers");
           }
         } else if (strcmp(params, "window") == 0) {
-		  ma_engine_play_sound(&engine, "audio/wind.wav", NULL);
+          ma_engine_play_sound( & engine, "audio/wind.wav", NULL);
           mvwprintw(stdscr, input_row + 1, 2, "You open the creaky window and smell a gust of stale air.");
           input_row++;
           mvwprintw(stdscr, input_row + 1, 2, "It seems like it has been closed for years. There is a very sharp looking");
@@ -745,7 +747,7 @@ int main(int argc, char ** argv) {
         } else if (strcmp(location, "study") == 0) {
           if (bookcases == true) {
             input_row = 0;
-            setup_ui(inventory, photo, compass, roomdescription, input_row);
+            setup_ui(inventory, bar,  photo, compass, roomdescription);
             mvwprintw(stdscr, input_row + 1, 2, "You slide behind the bookcases and find yourself in a very small room with a chest");
             strcpy(location, "hidden");
           } else {
@@ -799,22 +801,22 @@ int main(int argc, char ** argv) {
       input_row += 2;
       if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
         input_row = 0;
-        setup_ui(inventory, photo, compass, roomdescription, input_row);
+        setup_ui(inventory, bar,  photo, compass, roomdescription);
       }
 
     } else if (strcmp(main_input, "take") == 0 || strcmp(main_input, "pick") == 0) {
 
       if (strcmp(location, "study") == 0) {
         if (strcmp(params, "key") == 0) {
-          if (key_visibility == true &&key_inventory == false) {
-			ma_engine_play_sound(&engine, "audio/sparkle.wav", NULL);
+          if (key_visibility == true && key_inventory == false) {
+            ma_engine_play_sound( & engine, "audio/sparkle.wav", NULL);
             mvwprintw(stdscr, input_row + 1, 2, "You pick up the old key");
             key_inventory = true;
           } else {
             mvwprintw(stdscr, input_row + 1, 2, "There is no key to pick up");
           }
         } else {
-          mvwprintw(stdscr, input_row + 1, 2, "Cannot take %s", params);
+          mvwprintw(stdscr, input_row + 1, 2, "There is no %s to pick up", params);
         }
 
       } else if (strcmp(location, "frontroom") == 0) {
@@ -826,101 +828,59 @@ int main(int argc, char ** argv) {
       input_row += 2;
       if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
         input_row = 0;
-        setup_ui(inventory, photo, compass, roomdescription, input_row);
+        setup_ui(inventory, bar,  photo, compass, roomdescription);
       }
 
     } else if (strcmp(main_input, "help") == 0) { // Check of main_input matches help
       clear();
-      mvwprintw(stdscr, 0, 0, "------HELP SCREEN------\n");
-      printw("Command help:\n\n");
-      printw("\tview/look\n");
-      printw("\t\tViews an object.\n\t\te.g. 'view picture' would view a picture on a wall.\n");
-      printw("\tmove/walk/run\n");
-      printw("\t\tAllows the game character to move in a direction specified by the player.\n\t\te.g. 'move west' would move west.\n");
-      printw("\topen\n");
-      printw("\t\tOpens an object.\n\t\te.g. 'open drawer' would open a drawer.\n");
-      printw("\tsave\n");
-      printw("\t\tSaves the game.\n");
-      printw("\ttake/pick\n");
-      printw("\t\tTakes an object.\n\t\te.g. 'take key' would take a key.\n");
-      printw("\thelp\n");
-      printw("\t\tOpens this help screen.\n");
-      printw("\texit\n");
-      printw("\t\tSimply exits the game.\n\n\n");
-      printw("Press enter 3 times to exit this screen.\n");
+      printw("------HELP SCREEN------\nCommand help:\n\n\tview/look\n\t\tViews an object.\n\t\te.g. 'view picture' would view a picture on a wall.\n\tmove/walk/run\n\t\tAllows the game character to move in a direction specified by the player.\n\t\te.g. 'move west' would move west.\n\topen\n\t\tOpens an object.\n\t\te.g. 'open drawer' would open a drawer.\n\tsave\n\t\tSaves the game.\n\ttake/pick\n\t\tTakes an object.\n\t\te.g. 'take key' would take a key.\n\thelp\n\t\tOpens this help screen.\n\texit\n\t\tSimply exits the game.\n\n\nPress enter 3 times to exit this screen.\n");
       getstr(main_input); // idk why this is here but the program doesn't work when i take it away soooo...
       getchar(); // Waits until the user presses a key
       input_row = 0;
-      setup_ui(inventory, photo, compass, roomdescription, input_row);
+      setup_ui(inventory, bar,  photo, compass, roomdescription);
 
     } else if (strcmp(main_input, "save") == 0) {
-
-      FILE * fp = fopen("text\\gamesave.txt", "w");
-      mvwprintw(stdscr, input_row + 1, 2, "Saving game data to gamesave.txt");
-      int key_visibility_int = key_visibility; // Set the visibility of the key in the room to false (since the drawer is closed by default)
-      int key_inventory_int = key_inventory; // Set the status of the key to not in inventory (since it is in the closed drawer)
-      int bookcases_int = bookcases; // Set the status of the loose bookcase to not found (the player has to find the loose bookcase before opening it)
-      int chestloose_int = chestloose; // Set the status of the chest to fully closed (so the player has to open it twice)
-      int david_int = david; // Set david's treasure in the inventory to false
-      int pictureopen_int = pictureopen; // Set frontroom picture to be closed (passage)
-      int hiddentreasure_int = hiddentreasure;
-      int passagetreasure_int = passagetreasure;
-      fprintf(fp, "%s %s %d %d %d %d %d %d %d %d", name, location, key_visibility, key_inventory, bookcases, chestloose, david, pictureopen, hiddentreasure, passagetreasure);
-      fclose(fp);
-      input_row += 2;
-      if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
-        input_row = 0;
-        setup_ui(inventory, photo, compass, roomdescription, input_row);
+		save_game(input_row, name, location, key_visibility, key_inventory, bookcases, chestloose, david, pictureopen, hiddentreasure, passagetreasure, key_visibility_int, key_inventory_int, bookcases_int, chestloose_int, david_int, pictureopen_int, hiddentreasure_int, passagetreasure_int);
+		input_row += 2;
+		if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
+		input_row = 0;
+		setup_ui(inventory, bar,  photo, compass, roomdescription);
       }
 
-    } 
-	
-	else if (strcmp(main_input, "load") == 0 || strcmp(argv[1], "load") == 0) {
-      FILE * fp = fopen("text\\gamesave.txt", "r");
-      mvwprintw(stdscr, input_row + 1, 2, "Loading game data from gamesave.txt");
-      fscanf(fp, "%s %s %d %d %d %d %d %d %d %d", name, location, &key_visibility_int, &key_inventory_int, &bookcases_int, &chestloose_int, &david_int, &pictureopen_int, &hiddentreasure_int, &passagetreasure_int);
-      fclose(fp);
-      key_visibility = (key_visibility_int == 0) ? false : true;
-      key_inventory = (key_inventory_int == 0) ? false : true;
-      bookcases = (bookcases_int == 0) ? false : true;
-      chestloose = (chestloose_int == 0) ? false : true;
-      david = (david_int == 0) ? false : true;
-      pictureopen = (pictureopen_int == 0) ? false : true;
-      hiddentreasure = (hiddentreasure_int == 0) ? false : true;
-      passagetreasure = (passagetreasure_int == 0) ? false : true;
+    } else if (strcmp(main_input, "load") == 0) {
+      load_game(input_row, name, location, key_visibility, key_inventory, bookcases, chestloose, david, pictureopen, hiddentreasure, passagetreasure, key_visibility_int, key_inventory_int, bookcases_int, chestloose_int, david_int, pictureopen_int, hiddentreasure_int, passagetreasure_int);
       input_row = 0;
-      setup_ui(inventory, photo, compass, roomdescription, input_row);
+      setup_ui(inventory, bar,  photo, compass, roomdescription);
       input_row += 2;
       if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
         input_row = 0;
-        setup_ui(inventory, photo, compass, roomdescription, input_row);
+        setup_ui(inventory, bar,  photo, compass, roomdescription);
       }
-	  else if (main_input[0] == '\0' || isspace(main_input[0])) {
+    } else if (main_input[0] == '\0' || isspace(main_input[0])) {
       mvwprintw(stdscr, input_row + 1, 2, "I'm not psychic you know");
       input_row += 2;
       if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
         input_row = 0;
-        setup_ui(inventory, photo, compass, roomdescription, input_row);
+        setup_ui(inventory, bar,  photo, compass, roomdescription);
       }
     } else {
       mvwprintw(stdscr, input_row + 1, 2, "Try using one of the commands below", main_input); // Print the user main_input on the screen
       input_row += 2;
       if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
         input_row = 0;
-        setup_ui(inventory, photo, compass, roomdescription, input_row);
+        setup_ui(inventory, bar,  photo, compass, roomdescription);
       }
     }
 
     refresh(); // Refresh the screen
   }
   exit:
-    free(str); // free the allocated memory
+  free(str); // free the allocated memory
   delwin(bar); // Delete the bar
   delwin(compass);
   delwin(inventory);
   delwin(roomdescription);
   delwin(photo);
-
   endwin(); // Clears ncurses and returns back to previous state
   return 0; // Gives successful completion code
 }
