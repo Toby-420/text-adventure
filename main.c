@@ -1,886 +1,601 @@
 #define MINIAUDIO_IMPLEMENTATION
-#define MIDI_FILE "audio/track1.mid"
-#include <stdio.h>
-#include <string.h>
-#include <curses.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <ctype.h>
+#include <curses.h>
+#include <json-c/json.h>
+#include <signal.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include <windows.h>
-#include "portmidi.h"
+
 #include "miniaudio.h"
-
-
-#define player_health 3
-#define enemy_low_health 1
-#define enemy_mid_health 2
-#define enemy_high_health 3
-#define enemy_very_high_health 5
 #define MAX_HISTORY_ITEMS 1000
 #define MAX_COMMAND_LENGTH 20
+#define FRONT_ROOM 0
+#define STUDY 1
+#define HIDDEN_ROOM 2
+#define PASSAGE 3
 
 /*
-Compiled with GNU Compiler Collection (MinGW) on Windows 10 with command 'gcc -o play main.c icon/icon.o -lncurses -lwinmm'
-Do I wish this was Linux-based? Yes
-Can I make a Linux-compatible release? Yes, when I have finished the main version of the game
 
-I have a computer running Arch Linux (i use arch btw) and I can make a release for that, but I have to rewrite quite
-a bit of this for it to work which is why I haven't yet
+COMPILATION:
+
+- compile.bat (gcc -o play icon/icon.o main.c -lncurses -Wall -Werror -Wpedantic -O3 -ljson-c -fstack-protector -C -H -g -trigraphs)
+    └This should give you absolutely no errors or warnings
+
+- powershell -noprofile -executionpolicy bypass -file ./textalteration.ps1
+    └This changes the text displayed when the program is run in a DOS environment
+
+LICENSE:
+
+GNU General Public License version 3 (./COPYING)
+
 */
 
-int setup_ui(WINDOW * inventory, WINDOW *bar, WINDOW * photo, WINDOW * compass, WINDOW * roomdescription) {
-	clear();
-	refresh();
-	wborder(bar, '|', '|', '-', '-', '+', '+', '+', '+'); // Add border
-	box(inventory, 0, 0);
-	wrefresh(inventory);
-	box(photo, 0, 0);
-	wrefresh(photo);
-	refresh();
-	box(compass, 0, 0);
-	wrefresh(compass);
-	refresh();
-	box(roomdescription, 0, 0);
-	wrefresh(roomdescription);
-	refresh();
-	mvwprintw(bar, 0, 0, "Commands are: view, move, open, take, save, room, help, exit");
-	wrefresh(bar);
-	refresh();
+struct Windows {
+  WINDOW *inventory;
+  WINDOW *bar;
+  WINDOW *photo;
+  WINDOW *compass;
+  WINDOW *roomdescription;
+};
+
+struct WindowText {
+  char *asciiFrontRoomContents;
+  char *textFrontRoomContents;
+  char *asciiStudyContents;
+  char *textStudyContents;
+  char *asciiChestContents;
+  char *asciiChestOpenContents;
+  char *textHiddenRoomContents;
+  char *asciiSkullContents;
+  char *asciiPassageContents;
+  char *textPassageContents;
+  char *helpFileContents;
+};
+
+struct System {
+  bool nameAsked;
+  bool keyIsVisible;
+  bool keyIsInventory;
+  bool bookcaseIsLoose;
+  bool chestIsLoose;
+  bool davidTreasure;
+  bool pictureIsOpen;
+  bool hiddenRoomTreasure;
+  bool passageTreasure;
+  bool soundPlayed;
+  int inventoryStringPlace;
+};
+
+struct MainCharacter {
+  int locationNumber;
+  char location[22];
+  char name[22];
+  char namehold[22];
+  // bool overpowered;
+};
+
+void setupUi(struct Windows window) {
+  (void)clear();
+  (void)wclear(window.bar);
+  (void)wclear(window.photo);
+  (void)wclear(window.compass);
+  (void)wclear(window.inventory);
+  (void)wclear(window.roomdescription);
+  (void)refresh();
+  (void)wborder(window.bar, '|', '|', '-', '-', '+', '+', '+', '+');
+  (void)box(window.inventory, 0, 0);
+  (void)wrefresh(window.inventory);
+  (void)box(window.photo, 0, 0);
+  (void)wrefresh(window.photo);
+  (void)refresh();
+  (void)box(window.compass, 0, 0);
+  (void)wrefresh(window.compass);
+  (void)refresh();
+  (void)box(window.roomdescription, 0, 0);
+  (void)wrefresh(window.roomdescription);
+  (void)refresh();
+  (void)mvwprintw(window.bar, 0, 0, "Simple commands are: view, move, open, take, save, room, help, exit");
+  (void)wrefresh(window.bar);
+  (void)refresh();
 }
 
-int save_game(int input_row, char name[20], char location[255], bool key_visibility, bool key_inventory, bool bookcases, bool chestloose, bool david, bool pictureopen, bool hiddentreasure, bool passagetreasure, int key_visibility_int, int key_inventory_int, int bookcases_int, int chestloose_int, int david_int, int pictureopen_int, int hiddentreasure_int, int passagetreasure_int) {
-	FILE * fp = fopen("text\\gamesave.txt", "w");
-	mvwprintw(stdscr, input_row + 1, 2, "Saving game data to gamesave.txt");
-	key_visibility_int = key_visibility; // Set the visibility of the key in the room to false (since the drawer is closed by default)
-	key_inventory_int = key_inventory; // Set the status of the key to not in inventory (since it is in the closed drawer)
-	bookcases_int = bookcases; // Set the status of the loose bookcase to not found (the player has to find the loose bookcase before opening it)
-	chestloose_int = chestloose; // Set the status of the chest to fully closed (so the player has to open it twice)
-	david_int = david; // Set david's treasure in the inventory to false
-	pictureopen_int = pictureopen; // Set frontroom picture to be closed (passage)
-	hiddentreasure_int = hiddentreasure;
-	passagetreasure_int = passagetreasure;
-	fprintf(fp, "%s %s %d %d %d %d %d %d %d %d", name, location, key_visibility, key_inventory, bookcases, chestloose, david, pictureopen, hiddentreasure, passagetreasure);
-	fclose(fp);
+void loadText(struct Windows window, struct System system, struct MainCharacter character, struct WindowText text) {
+  setupUi(window);
+
+  window.bar = newwin(1, COLS, LINES - 1, 0);
+  wborder(window.bar, '|', '|', '-', '-', '+', '+', '+', '+');
+
+  mvwprintw(window.roomdescription, 1, 2, "ROOM DESCRIPTION:");
+  mvwprintw(window.inventory, 1, 2, "INVENTORY:");
+  mvwprintw(window.photo, 1, 2, "PLAYER VIEW:");
+  mvwprintw(window.compass, 1, 2, "COMPASS:");
+  mvwprintw(window.compass, 4, 8, "|");  // Add compass arms
+  mvwprintw(window.compass, 6, 8, "|");
+  mvwprintw(window.compass, 5, 6, "-- --");
+  mvwprintw(window.compass, 5, 8, "O");  // Add center of compass
+  mvwprintw(window.bar, 0, 0, "Commands are: view, move, open, take, save, room, help, exit");
+
+  if (system.keyIsInventory == true) {
+    mvwprintw(window.inventory, system.inventoryStringPlace, 1, "- Old, but shiny key");
+    system.inventoryStringPlace++;
+  }
+
+  if (system.davidTreasure == true) {
+    mvwprintw(window.inventory, system.inventoryStringPlace, 1, "- David's lost treasure");
+    system.inventoryStringPlace++;
+  }
+
+  if (system.hiddenRoomTreasure == true) {
+    mvwprintw(window.inventory, system.inventoryStringPlace, 1, "- Treasure from the hidden room");
+    system.inventoryStringPlace++;
+  }
+
+  if (system.passageTreasure == true) {
+    mvwprintw(window.inventory, system.inventoryStringPlace, 1, "- Treasure from the passage");
+    system.inventoryStringPlace++;
+  }
+
+  if (strcmp(character.location, "front room") == 0) {
+    mvwprintw(window.compass, 5, 2, "WEST ");
+    mvwprintw(window.compass, 5, 11, "EAST ");
+
+    if (system.pictureIsOpen == true) {
+      mvwprintw(window.compass, 7, 6, "SOUTH*");
+    }
+
+    mvwprintw(window.photo, 3, 0, text.asciiFrontRoomContents);
+
+    mvwprintw(window.roomdescription, 3, 0, text.textFrontRoomContents);
+
+  } else if (strcmp(character.location, "study") == 0) {
+    if (system.bookcaseIsLoose == true) {
+      mvwprintw(window.compass, 5, 11, "EAST*");
+    }
+
+    mvwprintw(window.compass, 5, 2, "WEST");
+
+    mvwprintw(window.photo, 3, 0, text.asciiStudyContents);
+
+    mvwprintw(window.roomdescription, 3, 0, text.textStudyContents);
+    if (system.bookcaseIsLoose == true) {
+      mvwprintw(window.roomdescription, 11, 2, "The bookcases also move it seems");
+    }
+
+  } else if (strcmp(character.location, "passage") == 0) {
+    mvwprintw(window.compass, 3, 6, "NORTH");
+
+    mvwprintw(window.photo, 3, 2, text.asciiPassageContents);
+
+    mvwprintw(window.roomdescription, 3, 2, text.textPassageContents);
+
+  } else if (strcmp(character.location, "hidden") == 0) {
+    if (system.davidTreasure == false) {
+      mvwprintw(window.photo, 3, 2, text.asciiChestContents);
+    } else {
+      mvwprintw(window.photo, 3, 2, text.asciiChestOpenContents);
+    }
+
+    mvwprintw(window.compass, 5, 2, "WEST");
+
+    mvwprintw(window.roomdescription, 3, 2, text.textHiddenRoomContents);
+  }
+
+  box(window.inventory, 0, 0);
+  box(window.photo, 0, 0);
+  box(window.roomdescription, 0, 0);
+  box(window.compass, 0, 0);
+  wrefresh(window.bar);
+  wrefresh(window.photo);
+  wrefresh(window.compass);
+  wrefresh(window.inventory);
+  wrefresh(window.roomdescription);
+  refresh();
 }
 
-int load_game(int input_row, char name[20], char location[255], bool key_visibility, bool key_inventory, bool bookcases, bool chestloose, bool david, bool pictureopen, bool hiddentreasure, bool passagetreasure, int key_visibility_int, int key_inventory_int, int bookcases_int, int chestloose_int, int david_int, int pictureopen_int, int hiddentreasure_int, int passagetreasure_int) {
-	FILE * fp = fopen("text\\gamesave.txt", "r");
-	mvwprintw(stdscr, input_row + 1, 2, "Loading game data from gamesave.txt");
-	fscanf(fp, "%s %s %d %d %d %d %d %d %d %d", name, location, & key_visibility_int, & key_inventory_int, & bookcases_int, & chestloose_int, & david_int, & pictureopen_int, & hiddentreasure_int, & passagetreasure_int);
-	fclose(fp);
-	key_visibility = (key_visibility_int == 0) ? false : true;
-	key_inventory = (key_inventory_int == 0) ? false : true;
-	bookcases = (bookcases_int == 0) ? false : true;
-	chestloose = (chestloose_int == 0) ? false : true;
-	david = (david_int == 0) ? false : true;
-	pictureopen = (pictureopen_int == 0) ? false : true;
-	hiddentreasure = (hiddentreasure_int == 0) ? false : true;
-	passagetreasure = (passagetreasure_int == 0) ? false : true;
-	return name, location, key_visibility, key_inventory, bookcases, chestloose, david, pictureopen, hiddentreasure, passagetreasure;
+char *readFileContents(const char *filename) {
+  FILE *file = fopen(filename, "r");
+
+  if (file == NULL) {
+    perror("Error opening file");
+    return NULL;
+  }
+
+  fseek(file, 0, SEEK_END);
+  long size = ftell(file);
+  fseek(file, 0, SEEK_SET);
+
+  char *file_contents = (char *)malloc(size + 1);
+  if (file_contents == NULL) {
+    perror("Error allocating memory");
+    fclose(file);
+    return NULL;
+  }
+
+  size_t read_size = fread(file_contents, 1, size, file);
+  file_contents[read_size] = '\0';
+
+  fclose(file);
+
+  return file_contents;
 }
 
+void toLowerCase(char *str) {
+  if (str == NULL) return;
+
+  while (*str) {
+    *str = tolower(*str);
+    str++;
+  }
+}
+
+void firstToUpper(char *str) {
+  *str = toupper(*str);
+  // This does not have error checking as it is always called after the toLowerCase function
+}
+
+void xorCipher(char *input, int key) {
+  while (*input) {
+    *input = *input ^ key;
+    input++;
+  }
+}
+
+int saveGame(struct System system, struct MainCharacter character) {
+  json_object *root = json_object_new_object();
+  (void)json_object_object_add(root, "location", json_object_new_string(character.location));
+  (void)json_object_object_add(root, "name", json_object_new_string(character.name));          // ciphered
+  (void)json_object_object_add(root, "namehold", json_object_new_string(character.namehold));  // readable
+  (void)json_object_object_add(root, "nameAsked", json_object_new_boolean(system.nameAsked));
+  // (void)json_object_object_add(root, "overpowered", json_object_new_boolean(character.overpowered));
+
+  const char *jsonString = json_object_to_json_string_ext(root, JSON_C_TO_STRING_PRETTY);
+
+  FILE *file = fopen("text\\savefile.json", "w");
+  if (file == NULL) {
+    (void)printf("Error opening file!\n");
+    return 1;
+  }
+  (void)fprintf(file, "%s", jsonString);
+  (void)fclose(file);
+
+  (void)json_object_put(root);
+  return 0;
+}
+
+int loadGame(struct System *system, struct MainCharacter *character) {
+  FILE *file = fopen("text\\savefile.json", "r");
+  if (file == NULL) {
+    printf("Error opening file!\n");
+    return 1;
+  }
+
+  fseek(file, 0, SEEK_END);
+  long fileSize = ftell(file);
+  fseek(file, 0, SEEK_SET);
+
+  char *jsonString = (char *)malloc(fileSize + 1);
+  if (jsonString == NULL) {
+    fclose(file);
+    printf("Memory allocation error!\n");
+    return 1;
+  }
+
+  fread(jsonString, 1, fileSize, file);
+  fclose(file);
+  jsonString[fileSize] = '\0';
+
+  json_object *root = json_tokener_parse(jsonString);
+  free(jsonString);
+
+  if (root == NULL) {
+    printf("Error parsing JSON character!\n");
+    return 1;
+  }
+
+  strcpy(character->location, json_object_get_string(json_object_object_get(root, "location")));
+  strcpy(character->name, json_object_get_string(json_object_object_get(root, "name")));
+  strcpy(character->namehold, json_object_get_string(json_object_object_get(root, "namehold")));
+  system->nameAsked = json_object_get_boolean(json_object_object_get(root, "nameAsked"));
+
+  json_object_put(root);
+  return 0;
+}
+
+char *handleLocation(int locationNumber) {
+  char *location = NULL;
+
+  switch (locationNumber) {
+    case 0:
+      location = strdup("front room");
+      break;
+    case 1:
+      location = strdup("study");
+      break;
+    case 2:
+      location = strdup("hidden");
+      break;
+    case 3:
+      location = strdup("passage");
+      break;
+    default:
+      break;
+  }
+
+  return location;
+}
+
+int handleViewCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window) { return 0; }
+
+int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window) {
+  if (parameters[0] == 'n') {
+    mvwprintw(stdscr, inputRow + 1, 2, "North chosen");
+  } else if (parameters[0] == 'e') {
+    mvwprintw(stdscr, inputRow + 1, 2, "East chosen");
+    if (character.locationNumber == FRONT_ROOM) {
+    } else if (character.locationNumber == STUDY) {
+    } else if (character.locationNumber == HIDDEN_ROOM) {
+    } else {
+    }
+  } else if (strcmp(parameters, "passage") == 0 || strcmp(parameters, "picture") == 0) {
+    if (character.locationNumber == HIDDEN_ROOM) {
+    } else if (character.locationNumber == STUDY) {
+    } else {
+    }
+  } else if (strcmp(parameters, "bookcases") == 0 || strcmp(parameters, "bookcase") == 0) {
+  } else if (parameters[0] == 'w') {
+    mvwprintw(stdscr, inputRow + 1, 2, "West chosen");
+  } else {
+    mvwprintw(stdscr, inputRow + 1, 2, "You cannot move %s however much you try", parameters);
+  }
+
+  return 0;
+}
+
+int handleOpenCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window) { return 0; }
+
+int handleTakeCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window) { return 0; }
+
+int processInput(int inputRow, char *mainInput, char *parameters, bool exitFlag, struct MainCharacter character, struct System system, struct Windows window, struct WindowText text) {
+  if (strcmp(mainInput, "view") == 0 || strcmp(mainInput, "look") == 0) {
+    handleViewCommand(inputRow, mainInput, parameters, character, system, window);
+    inputRow += 2;
+  } else if (strcmp(mainInput, "move") == 0 || strcmp(mainInput, "walk") == 0 || strcmp(mainInput, "run") == 0 || strcmp(mainInput, "enter") == 0 || strcmp(mainInput, "go") == 0 || strcmp(mainInput, "cd") == 0) {
+    handleMoveCommand(inputRow, mainInput, parameters, character, system, window);
+    inputRow += 2;
+  } else if (strcmp(mainInput, "open") == 0 || strcmp(mainInput, "shift") == 0) {
+    handleOpenCommand(inputRow, mainInput, parameters, character, system, window);
+    inputRow += 2;
+  } else if (strcmp(mainInput, "take") == 0 || strcmp(mainInput, "pick") == 0) {
+    handleTakeCommand(inputRow, mainInput, parameters, character, system, window);
+    inputRow += 2;
+  } else if (strcmp(mainInput, "help") == 0) {
+    clear();
+    printw(text.helpFileContents);
+    wrefresh(stdscr);
+    getch();
+    inputRow = 0;
+    setupUi(window);
+  } else if (mainInput[0] == '\0' || isspace(mainInput[0])) {
+    mvwprintw(stdscr, inputRow + 1, 2, "I'm not psychic you know");
+    inputRow += 2;
+  } else {
+    mvwprintw(stdscr, inputRow + 1, 2, "Try using one of the commands below");
+    inputRow += 2;
+  }
+  return inputRow;
+}
 
 int main(int argc, char *argv[]) {
+  HWND consoleWindow = GetConsoleWindow();  // Get handle to console window
+  ShowWindow(consoleWindow, SW_MAXIMIZE);   // Maximize console window
 
-  ma_result result;
+  struct MainCharacter character;
+  struct Windows window;
+  struct System system;
+  struct WindowText text;
+
   ma_engine engine;
-  ma_sound track;
-  ma_engine_init(NULL, & engine);
+  ma_engine_init(NULL, &engine);
 
-  HWND consoleWindow = GetConsoleWindow(); // Get handle to console window
-  ShowWindow(consoleWindow, SW_MAXIMIZE); // Maximize console window
+  initscr();  // Start ncurses
+  keypad(stdscr, TRUE);
+  curs_set(1);
+  set_tabsize(4);
 
-  initscr(); // Start ncurses
-  cbreak(); // Allow user input
-  keypad(stdscr, TRUE); // Enable arrow keys
-  curs_set(1); // Set cursor invisible
+  snprintf(character.location, sizeof(character.location), " ");
+  snprintf(character.name, sizeof(character.name), " ");
+  snprintf(character.namehold, sizeof(character.namehold), " ");
+  // character.overpowered = false;
 
-  WINDOW * bar = newwin(1, COLS, LINES - 1, 0); // Make new window for bar
-  wborder(bar, '|', '|', '-', '-', '+', '+', '+', '+'); // Add border
+  window.bar = newwin(1, COLS, LINES - 1, 0);
+  wborder(window.bar, '|', '|', '-', '-', '+', '+', '+', '+');
 
-  WINDOW * inventory = newwin(LINES / 3 + 3, COLS / 4, 1, COLS * 6 / 8); // Make new window for inventory
-  box(inventory, 0, 0); // Add box around inventory
+  window.inventory = newwin(LINES / 3 + 3, COLS / 4, 1, COLS * 6 / 8);
+  box(window.inventory, 0, 0);
 
-  WINDOW * photo = newwin(27, 45, LINES - 28, COLS - 85); // Make new window for player's view
-  box(photo, 0, 0); // Add a box around it
+  window.photo = newwin(27, 45, LINES - 28, COLS - 85);
+  box(window.photo, 0, 0);
 
-  WINDOW * roomdescription = newwin(27, 38, LINES - 28, COLS - 39); // Make a window for description
-  box(roomdescription, 0, 0); // make a box around it
+  window.roomdescription = newwin(27, 38, LINES - 28, COLS - 39);
+  box(window.roomdescription, 0, 0);
 
-  WINDOW * compass = newwin(9, 17, 1, COLS * 6 / 8 - 19); // Make a window for the compass
-  box(compass, 0, 0); // Make a box around compass
+  window.compass = newwin(9, 17, 1, COLS * 6 / 8 - 19);
+  box(window.compass, 0, 0);
 
-  mvwprintw(roomdescription, 1, 2, "ROOM DESCRIPTION:"); // Add titles to all the boxes
-  mvwprintw(inventory, 1, 2, "INVENTORY:");
-  mvwprintw(photo, 1, 2, "PLAYER VIEW:");
-  mvwprintw(compass, 1, 2, "COMPASS:");
-  mvwprintw(compass, 4, 8, "|"); // Add compass arms
-  mvwprintw(compass, 6, 8, "|");
-  mvwprintw(compass, 5, 6, "-- --");
-  mvwprintw(compass, 5, 8, "O"); // Add center of compass
-  mvwprintw(bar, 0, 0, "Commands are: view, move, open, take, save, room, help, exit"); // Add text to bar at bottom of screen
-  wrefresh(bar); // Display the windows
-  wrefresh(photo);
-  wrefresh(inventory);
-  wrefresh(compass);
-  wrefresh(roomdescription);
-  refresh(); // Display the result to the screen
+  unsigned short inputRow = 2;
+  char input[22] = " ";
+  char mainInput[22] = " ";
+  char parameters[22] = " ";
+  char *token = " ";
+  bool exitFlag = false;
 
-  char location[255]; // Make a character array for the location
-  char input[255]; // Declare a character array to hold user input
-  char * str = NULL;
-  char main_input[6]; // Declare an array for the main command (e.g. move, view, take, etc...)
-  char params[10]; // Declare an array for parameters such as key and drawer
-  char * token; // Make a pointer character for the tokens later on
-  char name[20];
+  system.nameAsked = false;
+  system.keyIsVisible = false;
+  system.keyIsInventory = false;
+  system.bookcaseIsLoose = false;
+  system.chestIsLoose = false;
+  system.davidTreasure = false;
+  system.pictureIsOpen = false;
+  system.hiddenRoomTreasure = false;
+  system.passageTreasure = false;
+  system.soundPlayed = false;
+  system.inventoryStringPlace = 2;
+  character.locationNumber = 0;
 
-  signed int input_row = 2; // Keep track of the row for input
-  int len = 0;
-  int key_visibility_int; // Set the visibility of the key in the room to false (since the drawer is closed by default)
-  int key_inventory_int; // Set the status of the key to not in inventory (since it is in the closed drawer)
-  int bookcases_int; // Set the status of the loose bookcase to not found (the player has to find the loose bookcase before opening it)
-  int chestloose_int; // Set the status of the chest to fully closed (so the player has to open it twice)
-  int david_int; // Set david's treasure in the inventory to false
-  int pictureopen_int; // Set frontroom picture to be closed (passage)
-  int hiddentreasure_int;
-  int passagetreasure_int;
+  strcpy(character.location, "front room");
 
-  bool nameask = false;
-  bool key_visibility = false; // Set the visibility of the key in the room to false (since the drawer is closed by default)
-  bool key_inventory = false; // Set the status of the key to not in inventory (since it is in the closed drawer)
-  bool bookcases = false; // Set the status of the loose bookcase to not found (the player has to find the loose bookcase before opening it)
-  bool chestloose = false; // Set the status of the chest to fully closed (so the player has to open it twice)
-  bool david = false; // Set david's treasure in the inventory to false
-  bool pictureopen = false; // Set frontroom picture to be closed (passage)
-  bool hiddentreasure = false;
-  bool passagetreasure = false;
-  bool soundplayed = false;
+  FILE *historyFile = fopen("text\\history.txt", "w");
 
+  text.asciiFrontRoomContents = readFileContents("ascii\\frontRoom.txt");
+  text.textFrontRoomContents = readFileContents("text\\frontRoom.txt");
+  text.asciiStudyContents = readFileContents("ascii\\study.txt");
+  text.textStudyContents = readFileContents("text\\study.txt");
+  text.asciiChestContents = readFileContents("ascii\\chest.txt");
+  text.asciiChestOpenContents = readFileContents("ascii\\chestOpen.txt");
+  text.textHiddenRoomContents = readFileContents("text\\hiddenRoom.txt");
+  text.asciiSkullContents = readFileContents("ascii\\skull.txt");
+  text.asciiPassageContents = readFileContents("ascii\\passage.txt");
+  text.textPassageContents = readFileContents("text\\passage.txt");
+  text.helpFileContents = readFileContents("text\\help.txt");
+  
+  if (argc > 1 && strcmp(argv[1], "load") == 0) {
+    loadGame(&system, &character);
+    loadText(window, system, character, text);
+  } else {
+    loadText(window, system, character, text);
+  }
 
-  strcpy(location, "frontroom"); // Set location to be frontroom (the starting room)
+  while (!exitFlag) {
+    if (system.nameAsked == false) {
+      (void)echo();
+      mvwprintw(stdscr, inputRow, 2, "The Room of the Locked Door");
+      inputRow++;
+      while (1) {
+        (void)mvwprintw(stdscr, inputRow, 2, "What do you want to be called? ");
+        getnstr(character.name, 20);
 
-  FILE * history_file = fopen("text\\history.txt", "w"); // Open file for history
-
-  while (1) { // Continue looping until user quits
-
-    if (nameask == false) {
-	  mvwprintw(stdscr, input_row, 2, "The Room of the Locked Door");
-	  input_row++;
-	  mvwprintw(stdscr, input_row, 2, "What do you want to be called? ");
-      getstr(name);
-      setup_ui(inventory, bar,  photo, compass, roomdescription);
-
-      int n = 0;
-      while (name[n]) {
-        name[n] = toupper(name[n]);
-        n++;
-      }
-      mvwprintw(stdscr, input_row - 1, 0, "\t\t\t\tWelcome to The Room of the Locked Door"); // Print starting things
-      input_row++; // Increment input_row by 1
-      mvwprintw(stdscr, input_row - 1, 0, "\t\t\t\t\tESCAPE OR DIE");
-      input_row++;
-      mvwprintw(stdscr, input_row - 1, 0, "\t*or type exit if you're a useless roadman who can't type and think at the same time*");
-      input_row += 2; // Increment input_row by 2
-      mvwprintw(stdscr, input_row - 1, 0, "You find yourself in an ornate and spacious front room with a window and a picture");
-      input_row++;
-      mvwprintw(stdscr, input_row - 1, 0, "There is a door that leads east and one that leads west");
-      input_row++;
-      nameask = true;
-    }
-    if (soundplayed == false) {
-      PlaySound("audio\\track1.wav", NULL, SND_FILENAME | SND_ASYNC | SND_LOOP); ///////////////////////////////////////////////////////////////////////// use sdl
-	   // Start the playback thread and wait for it to finish
-      soundplayed = true;
-    }
-    mvwprintw(stdscr, input_row, 0, "> [%s] ", location); // Put a terminal-like prompt with the current location at the top of the screen
-
-    if (key_inventory == true) {
-      mvwprintw(inventory, 2, 1, "- Old, but shiny key"); // Add the key to the inventory at line 1
-      wrefresh(inventory);
-    } else {
-      mvwprintw(inventory, 2, 1, "                    "); // Clear the key from inventory (not used yet but might later)
-      wrefresh(inventory);
-    }
-
-    if (david == true) {
-      mvwprintw(inventory, 3, 1, "- David's lost treasure"); // Add david to the inventory at line 3
-      wrefresh(inventory);
-    } else {
-      mvwprintw(inventory, 3, 1, "                       "); // Clear from inventory
-      wrefresh(inventory);
-    }
-
-    if (hiddentreasure == true) {
-      mvwprintw(inventory, 4, 1, "- Treasure from the picture"); // Add david to the inventory at line 4
-      wrefresh(inventory);
-    } else {
-      mvwprintw(inventory, 4, 1, "                       "); // Clear from inventory
-      wrefresh(inventory);
-    }
-    if (passagetreasure == true) {
-      mvwprintw(inventory, 5, 1, "- Treasure from the passage"); // Add david to the inventory at line 5
-      wrefresh(inventory);
-    } else {
-      mvwprintw(inventory, 5, 1, "                       "); // Clear from inventory
-      wrefresh(inventory);
-    }
-
-    if (strcmp(location, "frontroom") == 0) {
-      mvwprintw(compass, 5, 2, "WEST"); // Add possible directions onto the compass
-      mvwprintw(compass, 5, 11, "EAST ");
-      mvwprintw(compass, 3, 6, "     ");
-
-      if (pictureopen == true) {
-        mvwprintw(compass, 7, 6, "SOUTH*");
-      } else {
-
-        mvwprintw(compass, 7, 6, "      ");
+        if (character.name[0] == '\0' || isspace(character.name[0])) {
+        } else {
+          break;
+        }
       }
 
-      wrefresh(compass);
-      mvwprintw(photo, 3, 2, "        |                 |");
-      mvwprintw(photo, 4, 2, "        |                 |");
-      mvwprintw(photo, 5, 2, "        |                 |  ");
-      mvwprintw(photo, 6, 2, "     /| |                 | |\\");
-      mvwprintw(photo, 7, 2, "    / | |                 | | \\");
-      mvwprintw(photo, 8, 2, "   //|| |      _____      | |  \\");
-      mvwprintw(photo, 9, 2, "  // || |     |  o  |     | |   \\");
-      mvwprintw(photo, 10, 2, " ||  || |     | -H- |     | |   |");
-      mvwprintw(photo, 11, 2, " ||  || |     |  X  |     | |   |");
-      mvwprintw(photo, 12, 2, " ||  || |     | / \\ |     | |   |");
-      mvwprintw(photo, 13, 2, " ||  || |     |_____|     | |   |");
-      mvwprintw(photo, 14, 2, " ||  || |                 | |   |"); // Add the ASCII art in the PLAYER VIEW box (photo window)
-      mvwprintw(photo, 15, 2, " ||o || |_________________| |  o|");
-      mvwprintw(photo, 16, 2, " ||  || /                 \\ |   |   ");
-      mvwprintw(photo, 17, 2, " ||  ||/                   \\|   |   ");
-      mvwprintw(photo, 18, 2, " ||  |/                     \\   |   ");
-      mvwprintw(photo, 19, 2, " || //                       \\  |   ");
-      mvwprintw(photo, 20, 2, " ||//                         \\ |   ");
-      mvwprintw(photo, 21, 2, " | /                           \\|   ");
-      mvwprintw(photo, 22, 2, " |/                             \\   ");
-      mvwprintw(photo, 23, 2, " /                               \\   ");
-      wrefresh(photo);
-      mvwprintw(roomdescription, 3, 2, "This is an ornate, spacious front");
-      mvwprintw(roomdescription, 4, 2, "room with a large window.         "); // Add description about front room into the description box
-      mvwprintw(roomdescription, 5, 2, "Two doors are here with one");
-      mvwprintw(roomdescription, 6, 2, "leading east, the other west.   ");
-      mvwprintw(roomdescription, 7, 2, "A picture hangs on the wall and");
-      mvwprintw(roomdescription, 8, 2, "makes the place seem very pretty");
-      mvwprintw(roomdescription, 9, 2, "until you see the rest of the   ");
-      mvwprintw(roomdescription, 10, 2, "room which is quite run-down");
-      wrefresh(roomdescription);
+      (void)noecho();
 
-    } else if (strcmp(location, "study") == 0) {
-      if (bookcases == false) { // If the secret room has been discovered
-        mvwprintw(compass, 5, 11, "     "); // Cover up EAST as a direction
-      } else {
-        mvwprintw(compass, 5, 11, "EAST*"); // Write EAST onto the compass
+      (void)toLowerCase(character.name);
 
-      }
-      mvwprintw(compass, 5, 2, "WEST"); // Add possible direction onto compass
-      mvwprintw(compass, 3, 6, "     ");
-      mvwprintw(compass, 7, 6, "      ");
-      mvwprintw(compass, 3, 6, "     ");
+      (void)strcpy(character.namehold, character.name);
 
-      wrefresh(compass);
-      mvwprintw(photo, 3, 2, "        |                 |");
-      mvwprintw(photo, 4, 2, "        |                 |   ");
-      mvwprintw(photo, 5, 2, "        |                 |      ");
-      mvwprintw(photo, 6, 2, "     /| |                 |     ");
-      mvwprintw(photo, 7, 2, "    / | |                 |       ");
-      mvwprintw(photo, 8, 2, "   //|| |     _______     |       ");
-      mvwprintw(photo, 9, 2, "  // || |    |ooo    |    |       ");
-      mvwprintw(photo, 10, 2, " ||  || |    | I  n  |    |       ");
-      mvwprintw(photo, 11, 2, " ||  || |    |_______|    |       ");
-      mvwprintw(photo, 12, 2, " ||  || |    _________    |        ");
-      mvwprintw(photo, 13, 2, " ||  || |   /         \\   ||\\ \\     ");
-      mvwprintw(photo, 14, 2, " ||  || |  /___________\\  |||\\ \\     ");
-      mvwprintw(photo, 15, 2, " ||o || |__|------|----|__||||\\ \\      ");
-      mvwprintw(photo, 16, 2, " ||  || /  |      |---o|  \\|\\||\\_\\    "); // Add the ASCII art in the PLAYER VIEW box (photo window)
-      mvwprintw(photo, 17, 2, " ||  ||/   |      |----|   ||\\|| |    ");
-      mvwprintw(photo, 18, 2, " ||  |/                    |\\|\\| |     ");
-      mvwprintw(photo, 19, 2, " || //                     \\|\\|| |    ");
-      mvwprintw(photo, 20, 2, " ||//                       \\|\\| |    ");
-      mvwprintw(photo, 21, 2, " | /                         \\|| |    ");
-      mvwprintw(photo, 22, 2, " |/                           \\| |    ");
-      mvwprintw(photo, 23, 2, " /                             |_|\\    ");
-      wrefresh(photo);
-      mvwprintw(roomdescription, 3, 2, "You look around and see a small,  ");
-      mvwprintw(roomdescription, 4, 2, "comfy room with bookcases around");
-      mvwprintw(roomdescription, 5, 2, "the walls.                       ");
-      mvwprintw(roomdescription, 6, 2, "There is a broken window and a"); // Add description about front room into the description box
-      mvwprintw(roomdescription, 7, 2, "whose drawer has seen better.  ");
-      mvwprintw(roomdescription, 8, 2, "The window is quite drafty and   ");
-      mvwprintw(roomdescription, 9, 2, "bland with a small wooden frame");
-      mvwprintw(roomdescription, 10, 2, "It looks like a study.         ");
-      if (bookcases == true) {
-        mvwprintw(roomdescription, 11, 2, "The bookcases also move it seems");
-      } else {
-        mvwprintw(roomdescription, 11, 2, "                               ");
-      }
+      (void)xorCipher(character.name, 42);
 
-      wrefresh(roomdescription);
+      // if (strcmp(character.name, "YBSFCFS") == 0) {
+      // character.overpowered = true;
+      // }
 
-    } else if (strcmp(location, "picture") == 0) {
-      mvwprintw(compass, 5, 11, "     "); // Write EAST onto the compass
-      mvwprintw(compass, 5, 2, "    "); // Add possible direction onto compass
-      mvwprintw(compass, 3, 6, "NORTH");
+      (void)firstToUpper(character.namehold);
 
-      mvwprintw(compass, 7, 6, "      ");
-      wrefresh(compass);
-      mvwprintw(photo, 3, 2, "        |                 |");
-      mvwprintw(photo, 4, 2, "        |                 |   ");
-      mvwprintw(photo, 5, 2, "        |                 |      ");
-      mvwprintw(photo, 6, 2, "     /| |                 |     ");
-      mvwprintw(photo, 7, 2, "    / | |                 |       ");
-      mvwprintw(photo, 8, 2, "   //|| |     _______     |       ");
-      mvwprintw(photo, 9, 2, "  // || |    |ooo    |    |       ");
-      mvwprintw(photo, 10, 2, " ||  || |    | I  n  |    |       ");
-      mvwprintw(photo, 11, 2, " ||  || |    |_______|    |       ");
-      mvwprintw(photo, 12, 2, " ||  || |    _________    |        ");
-      mvwprintw(photo, 13, 2, " ||  || |   /         \\   ||\\ \\     ");
-      mvwprintw(photo, 14, 2, " ||  || |  /___________\\  |||\\ \\     ");
-      mvwprintw(photo, 15, 2, " ||o || |__|------|----|__||||\\ \\      ");
-      mvwprintw(photo, 16, 2, " ||  || /  |      |---o|  \\|\\||\\_\\    "); // Add the ASCII art in the PLAYER VIEW box (photo window)
-      mvwprintw(photo, 17, 2, " ||  ||/   |      |----|   ||\\|| |    ");
-      mvwprintw(photo, 18, 2, " ||  |/                    |\\|\\| |     ");
-      mvwprintw(photo, 19, 2, " || //                     \\|\\|| |    ");
-      mvwprintw(photo, 20, 2, " ||//                       \\|\\| |    ");
-      mvwprintw(photo, 21, 2, " | /                         \\|| |    ");
-      mvwprintw(photo, 22, 2, " |/                           \\| |    ");
-      mvwprintw(photo, 23, 2, " /                             |_|\\    ");
-      wrefresh(photo);
-      mvwprintw(roomdescription, 3, 2, "You look around and see a small,  ");
-      mvwprintw(roomdescription, 4, 2, "comfy room with bookcases around");
-      mvwprintw(roomdescription, 5, 2, "the walls.                       ");
-      mvwprintw(roomdescription, 6, 2, "There is a broken window and a"); // Add description about front room into the description box
-      mvwprintw(roomdescription, 7, 2, "whose drawer has seen better.  ");
-      mvwprintw(roomdescription, 8, 2, "The window is quite drafty and   ");
-      mvwprintw(roomdescription, 9, 2, "bland with a small wooden frame");
-      mvwprintw(roomdescription, 10, 2, "It looks like a study.         ");
-      if (bookcases == true) {
-        mvwprintw(roomdescription, 11, 2, "The bookcases also move it seems");
-      } else {
-        mvwprintw(roomdescription, 11, 2, "                               ");
-      }
+      loadText(window, system, character, text);
 
-      wrefresh(roomdescription);
-
-    } else if (strcmp(location, "hidden") == 0) {
-      if (david == false) {
-
-        mvwprintw(compass, 5, 11, "     ");
-        mvwprintw(compass, 5, 2, "WEST");
-
-        wrefresh(compass);
-        mvwprintw(photo, 3, 2, "                                      ");
-        mvwprintw(photo, 4, 2, "                                      ");
-        mvwprintw(photo, 5, 2, "                                      ");
-        mvwprintw(photo, 6, 2, "                                      ");
-        mvwprintw(photo, 7, 2, "         _____________                ");
-        mvwprintw(photo, 8, 2, "        /-------------\\               ");
-        mvwprintw(photo, 9, 2, "       /_______________\\              ");
-        mvwprintw(photo, 10, 2, "       |------| |------|              ");
-        mvwprintw(photo, 11, 2, "       |------|?|------|              ");
-        mvwprintw(photo, 12, 2, "       |------\\-/------|              ");
-        mvwprintw(photo, 13, 2, "       |---------------|              ");
-        mvwprintw(photo, 14, 2, "       |_______________|              ");
-        mvwprintw(photo, 15, 2, "                                      ");
-        mvwprintw(photo, 16, 2, "                                      ");
-        mvwprintw(photo, 17, 2, "                                      ");
-        mvwprintw(photo, 18, 2, "                                      ");
-        mvwprintw(photo, 19, 2, "                                      ");
-        mvwprintw(photo, 20, 2, "                                      ");
-        mvwprintw(photo, 21, 2, "                                      ");
-        mvwprintw(photo, 22, 2, "                                      ");
-        mvwprintw(photo, 23, 2, "                                      ");
-        wrefresh(photo);
-      } else {
-        mvwprintw(compass, 5, 11, "      ");
-        mvwprintw(compass, 5, 2, "WEST ");
-
-        wrefresh(compass);
-        mvwprintw(photo, 3, 2, "          ___________                   ");
-        mvwprintw(photo, 4, 2, "         |-----------|                  ");
-        mvwprintw(photo, 5, 2, "         |-----------|                  ");
-        mvwprintw(photo, 6, 2, "         |-----------|                  ");
-        mvwprintw(photo, 7, 2, "         |___________|                 ");
-        mvwprintw(photo, 8, 2, "        /#############\\               ");
-        mvwprintw(photo, 9, 2, "       /_______________\\              ");
-        mvwprintw(photo, 10, 2, "       |---------------|              ");
-        mvwprintw(photo, 11, 2, "       |-------?-------|              ");
-        mvwprintw(photo, 12, 2, "       |---------------|              ");
-        mvwprintw(photo, 13, 2, "       |---------------|              ");
-        mvwprintw(photo, 14, 2, "       |_______________|              ");
-        mvwprintw(photo, 15, 2, "                                      ");
-        mvwprintw(photo, 16, 2, "                                      ");
-        mvwprintw(photo, 17, 2, "                                      ");
-        mvwprintw(photo, 18, 2, "                                      ");
-        mvwprintw(photo, 19, 2, "                                      ");
-        mvwprintw(photo, 20, 2, "                                      ");
-        mvwprintw(photo, 21, 2, "                                      ");
-        mvwprintw(photo, 22, 2, "                                      ");
-        mvwprintw(photo, 23, 2, "                                      ");
-        wrefresh(photo);
-
-      }
-
-      mvwprintw(roomdescription, 3, 2, "Shhhh, this is a hidden room.     ");
-      mvwprintw(roomdescription, 4, 2, "It is very small with the only    ");
-      mvwprintw(roomdescription, 5, 2, "remarkable thing being a chest in ");
-      mvwprintw(roomdescription, 6, 2, "the center of it.                 ");
-      mvwprintw(roomdescription, 7, 2, "There isn't much else.           ");
-      mvwprintw(roomdescription, 8, 2, "                                 ");
-      mvwprintw(roomdescription, 9, 2, "                                  ");
-      mvwprintw(roomdescription, 10, 2, "                                 ");
-      mvwprintw(roomdescription, 11, 2, "                                 ");
-      wrefresh(roomdescription);
-
-    } else {
-      mvwprintw(compass, 5, 2, "      ");
-      mvwprintw(compass, 5, 11, "      ");
-      wrefresh(compass);
-
+      mvwprintw(stdscr, inputRow - 1, 0, "\t\t\t\tWelcome to The Room of the Locked Door");
+      inputRow++;
+      mvwprintw(stdscr, inputRow - 1, 0, "\t\t\t\t\tESCAPE OR DIE");
+      inputRow++;
+      mvwprintw(stdscr, inputRow - 1, 0, "\tor type exit if you're a useless roadman who can't type and think at the same time");
+      inputRow += 2;
+      mvwprintw(stdscr, inputRow - 1, 0, "You find yourself in an ornate and spacious front room with a window and a picture");
+      inputRow++;
+      mvwprintw(stdscr, inputRow - 1, 0, "There is a door that leads east and one that leads west");
+      inputRow++;
+      system.nameAsked = true;
+      (void)echo();
     }
+    if (system.soundPlayed == false) {
+      PlaySound("audio\\track1.wav", NULL, SND_FILENAME | SND_ASYNC | SND_LOOP);
+      system.soundPlayed = true;
+    }
+    mvwprintw(stdscr, inputRow, 0, "> [%s@%s] ", character.namehold, character.location);
 
-    getstr(input); // Get a string of input from the user
+    getnstr(input, 20);
 
-    fprintf(history_file, "%s\n", input);
+    fprintf(historyFile, "%s\n", input);
 
     token = strtok(input, " ");
     if (token != NULL) {
-      strcpy(main_input, token);
+      strcpy(mainInput, token);
 
       token = strtok(NULL, " ");
       if (token != NULL) {
-        strcpy(params, token);
+        strcpy(parameters, token);
       }
     }
 
     int i;
-    for (i = 0; main_input[i]; i++) {
-      main_input[i] = tolower(main_input[i]);
+    for (i = 0; mainInput[i]; i++) {
+      mainInput[i] = tolower(mainInput[i]);
     }
     int f;
-    for (f = 0; params[f]; f++) {
-      params[f] = tolower(params[f]);
+    for (f = 0; parameters[f]; f++) {
+      parameters[f] = tolower(parameters[f]);
     }
 
-    if (strcmp(main_input, "exit") == 0) { // Check if main_input matches the word "exit"
-      // Respond to the user
-      goto exit;
-    } else if (strcmp(main_input, "view") == 0 || strcmp(main_input, "look") == 0) {
-      if (strcmp(params, "window") == 0) {
-        if (strcmp(location, "frontroom") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "There is a large, stained glass window with pictures of a naked Jesus and sheep on it");
-        } else if (strcmp(location, "study") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "A crusty, wooden window frame houses a small sheet of glass. It seems pretty drafty");
-        } else if (strcmp(location, "hidden") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "A small, quite unremarkable room housing a chest");
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "Location not found");
-        }
-      } else if (strcmp(params, "picture") == 0) {
-        if (strcmp(location, "frontroom") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "A big, hand-painted picture of a guy sits on the wall");
-          // include ascii art for window 'photo'
-        } else if (strcmp(location, "study") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "There are no pictures in here. Only Zuul");
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "Location not found");
-        }
-      } else if (strcmp(params, "key") == 0) {
-        if (key_inventory == true || key_visibility == true) {
-          mvwprintw(stdscr, input_row + 1, 2, "You see an old key which is still shiny. What is it here for?");
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "Key what? Key procedures?");
-        }
-      } else if (strcmp(params, "treasure") == 0) {
-        if (david == true) {
-          mvwprintw(stdscr, input_row + 1, 2, "It looks like a small tin with something quite dense inside");
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "You see no treasure in here");
-        }
-      } else if (strcmp(params, "bookcase") == 0 || strcmp(params, "bookcases") == 0) {
-        if (strcmp(location, "frontroom") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "There are no bookcases in here");
-        } else if (strcmp(location, "study") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "Beautifully crafted bookcases line the walls. One looks a little loose");
-          bookcases = true;
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "There are no bookcases");
-        }
-      } else if (strcmp(params, "room") == 0) {
-        if (strcmp(location, "frontroom") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "A large and ornate, yet run-down front room with a window, picture and doors to the east and west");
-        } else if (strcmp(location, "study") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "A somewhat good-looking room until you see the window and drawer which are slighty broken");
-        } else if (strcmp(location, "hidden") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "A tiny room which only has a chest in");
-        } else if (strcmp(location, "picture") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "A small room you found hidden behind a picture");
-        } else if (strcmp(location, "passage") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "A little passageway that seemingly goes through quite a large area");
-
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "There has been no description for this room yet");
-        }
-      } else {
-        mvwprintw(stdscr, input_row + 1, 2, "There is nothing of interest here");
-      }
-
-      input_row += 2;
-      if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3 || input_row + 1 == LINES - 3) {
-        input_row = 0;
-        setup_ui(inventory, bar,  photo, compass, roomdescription);
-      }
-
-    } else if (strcmp(main_input, "cory-nonce") == 0) {
-
-      input_row++;
-      if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
-        input_row = 0;
-        setup_ui(inventory, bar,  photo, compass, roomdescription);
-      }
-
-    } else if (strcmp(main_input, "move") == 0 || strcmp(main_input, "walk") == 0 || strcmp(main_input, "run") == 0 || strcmp(main_input, "enter") == 0 || strcmp(main_input, "go") == 0) {
-
-      if (strcmp(params, "east") == 0 || strcmp(params, "e") == 0) {
-
-        if (strcmp(location, "frontroom") == 0) {
-          input_row = 0;
-          setup_ui(inventory, bar,  photo, compass, roomdescription);
-          mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
-          mvwprintw(stdscr, input_row + 1, 2, "You move into a small study. bookcases line the walls, along with a window overseeing the garden");
-          input_row++;
-          mvwprintw(stdscr, input_row + 1, 2, "There is a table with an old, solid oak drawer");
-          strcpy(location, "study");
-          wrefresh(compass);
-
-        } else if (strcmp(location, "study") == 0 || strcmp(location, "hidden") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "You walk into a wall");
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "Location not found");
-        }
-      } else if (strcmp(params, "passage") == 0 || strcmp(params, "picture") == 0) {
-        if (strcmp(location, "hidden") == 0) {
-          input_row = 0;
-          setup_ui(inventory, bar,  photo, compass, roomdescription);
-          mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
-          mvwprintw(stdscr, input_row + 1, 2, "You move into the tight passage, previously blocked by the darkness");
-          strcpy(location, "passage");
-        } else if (strcmp(location, "frontroom") == 0) {
-          if (pictureopen == true) {
-            input_row = 0;
-            setup_ui(inventory, bar,  photo, compass, roomdescription);
-            mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
-            mvwprintw(stdscr, input_row + 1, 2, "You squeeze behind the picture, and find yourself in a small room");
-            strcpy(location, "picture");
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "There is no %s to enter", params);
-          }
-        } else if (strcmp(location, "study") == 0) {
-
-        } else {
-
-        }
-      } else if (strcmp(params, "bookcases") == 0 || (strcmp(params, "bookcase") == 0)) {
-
-        if (strcmp(location, "frontroom") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "What bookcases...");
-        } else if (strcmp(location, "study") == 0) {
-          if (bookcases == true) {
-            input_row = 0;
-            setup_ui(inventory, bar,  photo, compass, roomdescription);
-            mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
-            mvwprintw(stdscr, input_row + 1, 2, "You slide behind the bookcases and find yourself in a very small room with a chest");
-            strcpy(location, "hidden");
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "There are no bookcases to move");
-          }
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "Location not found");
-        }
-
-      } else if (strcmp(params, "north") == 0) {
-        if (strcmp(location, "study") == 0) {
-          input_row = 0;
-          setup_ui(inventory, bar,  photo, compass, roomdescription);
-          mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
-          mvwprintw(stdscr, input_row + 1, 2, "You fall out of the window and die");
-          mvwprintw(stdscr, LINES - 2, 0, "EXITING PROGRAM");
-          mvwprintw(photo, 3, 2, "             _..~~~~~~~.._           ");
-          mvwprintw(photo, 4, 2, "         .:~'             '~:.       ");
-          mvwprintw(photo, 5, 2, "       .:                     :.     ");
-          mvwprintw(photo, 6, 2, "      :                         :    ");
-          mvwprintw(photo, 7, 2, "     .'                         '.   ");
-          mvwprintw(photo, 8, 2, "    .:                           :.  ");
-          mvwprintw(photo, 9, 2, "    : :                         : :  ");
-          mvwprintw(photo, 10, 2, "    | :   _____         _____   : |  ");
-          mvwprintw(photo, 11, 2, "    |  '/~     ~   .   ~     ~\'  |  ");
-          mvwprintw(photo, 12, 2, "    |  ~  .-~~~~~. | .~~~~~-.  ~  |  ");
-          mvwprintw(photo, 13, 2, "     |   |        }:{        |   |   ");
-          mvwprintw(photo, 14, 2, "     |   !       / | \\       !   |   ");
-          mvwprintw(photo, 15, 2, "     .~   \\_..--' .^. '--.._/  ~.    ");
-          mvwprintw(photo, 16, 2, "      |        :' /|\\ ':        |    ");
-          mvwprintw(photo, 17, 2, "       \\~~.__     U^U     __.~~/     ");
-          mvwprintw(photo, 18, 2, "        \\I \\#\\           /#/ I/      ");
-          mvwprintw(photo, 19, 2, "         | |#~\\_________/~#| |       ");
-          mvwprintw(photo, 20, 2, "         | |###|||_|_|||###| |       ");
-          mvwprintw(photo, 21, 2, "         |  \\,#|||||||||#,/  |       ");
-          mvwprintw(photo, 22, 2, "          \\   '~~~~~~~~~'   /        ");
-          mvwprintw(photo, 23, 2, "           \\    .     .    /         ");
-          mvwprintw(photo, 24, 2, "            \\.     ^     ./          ");
-          mvwprintw(photo, 25, 2, "              '~~~~^~~~~'            ");
-          wrefresh(photo);
-          mvwprintw(roomdescription, 3, 2, "You carelessly walked into the  ");
-          mvwprintw(roomdescription, 4, 2, "window and fell out, collapsing "); // Add description about front room into the description box
-          mvwprintw(roomdescription, 5, 2, "onto the rose bush.             ");
-          mvwprintw(roomdescription, 6, 2, "Well done. You managed to die   ");
-          mvwprintw(roomdescription, 7, 2, "in a room without any enemies.  ");
-          mvwprintw(roomdescription, 8, 2, "*HEY EVERYBODY! %s              ", name);
-          mvwprintw(roomdescription, 9, 2, "MANAGED TO DIE WITHOUT ANY         ");
-          mvwprintw(roomdescription, 10, 2, "ENEMIES! LET'S GIVE A SLOW CLAP* ");
-          wrefresh(roomdescription);
-          refresh(); // Refresh the screen
-          goto exit;
-
-        } else if (strcmp(location, "picture") == 0) {
-          input_row = 0;
-          setup_ui(inventory, bar,  photo, compass, roomdescription);
-          mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
-          mvwprintw(stdscr, input_row + 1, 2, "You move back into the front room");
-          strcpy(location, "frontroom");
-          wrefresh(compass);
-        } else if (strcmp(location, "hidden") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "You headbutt the wall");
-        } else if (strcmp(location, "frontroom") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "The window cannot be traveled through");
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "Location not found");
-        }
-      } else if (strcmp(params, "west") == 0) {
-        if (strcmp(location, "study") == 0) {
-          input_row = 0;
-          setup_ui(inventory, bar,  photo, compass, roomdescription);
-          mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
-          mvwprintw(stdscr, input_row + 1, 2, "You move back into the front room");
-          strcpy(location, "frontroom");
-          wrefresh(compass);
-        } else if (strcmp(location, "hidden") == 0) {
-          input_row = 0;
-          setup_ui(inventory, bar,  photo, compass, roomdescription);
-          mvwprintw(stdscr, input_row, 0, "> [%s] %s %s", location, main_input, params);
-          mvwprintw(stdscr, input_row + 1, 2, "You move back into the study");
-          strcpy(location, "study");
-          wrefresh(compass);
-        } else if (strcmp(location, "frontroom") == 0) {
-          if (key_inventory == false) {
-            mvwprintw(stdscr, input_row + 1, 2, "This door is locked. Maybe there is a key somewhere");
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "Well done, you have completed 'The Room of the Locked Door'");
-            if (david == true) {
-              input_row++;
-              mvwprintw(stdscr, input_row + 1, 2, "You even found David's old cake tin");
-            }
-            mvwprintw(stdscr, LINES - 2, 0, "EXITING PROGRAM");
-            refresh(); // Refresh the screen
-            sleep(5); // Wait for a second to allow the user to read the message
-            delwin(bar); // Delete the bar
-            endwin(); // Clear ncurses and return back to previous state
-            return 0; // Exit the program with a successful completion code
-          }
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "Location not found");
-        }
-
-      } else {
-        mvwprintw(stdscr, input_row + 1, 2, "You walk into a wall");
-      }
-
-      input_row += 2;
-      if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
-        input_row = 0;
-        setup_ui(inventory, bar,  photo, compass, roomdescription);
-      }
-
-    } else if (strcmp(main_input, "open") == 0 || strcmp(main_input, "shift") == 0) {
-
-      if (strcmp(location, "study") == 0) {
-        if (strcmp(params, "drawer") == 0) {
-          if (key_visibility == false) {
-            ma_engine_play_sound( & engine, "audio/drawer.wav", NULL);
-            mvwprintw(stdscr, input_row + 1, 2, "You open the old, dusty drawer whose handle is nearly broken and you find an old, but shiny key");
-            key_visibility = true;
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "There is nothing else in here. Except some Opal Fruit wrappers");
-          }
-        } else if (strcmp(params, "window") == 0) {
-          ma_engine_play_sound( & engine, "audio/wind.wav", NULL);
-          mvwprintw(stdscr, input_row + 1, 2, "You open the creaky window and smell a gust of stale air.");
-          input_row++;
-          mvwprintw(stdscr, input_row + 1, 2, "It seems like it has been closed for years. There is a very sharp looking");
-          input_row++;
-          mvwprintw(stdscr, input_row + 1, 2, "rose bush which looks like it would hurt. There is nothing of use. You close the window");
-        } else if (strcmp(params, "door") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "There is no door here");
-        } else if (strcmp(params, "key") == 0) {
-          if (key_inventory == true) {
-            mvwprintw(stdscr, input_row + 1, 2, "You try with all your might, but the key doesn't want to open");
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "You do not have a key to open");
-          }
-        } else if (strcmp(params, "treasure") == 0) {
-          if (david == true) {
-            mvwprintw(stdscr, input_row + 1, 2, "You open the treasure... And it immediately slaps you in the face and closes");
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "You have no treasure");
-          }
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "The %s is too difficult to move. It just won't budge", params);
-        }
-      } else if (strcmp(params, "bookcases") == 0 || (strcmp(params, "bookcase") == 0)) {
-
-        if (strcmp(location, "frontroom") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "What bookcases...");
-        } else if (strcmp(location, "study") == 0) {
-          if (bookcases == true) {
-            input_row = 0;
-            setup_ui(inventory, bar,  photo, compass, roomdescription);
-            mvwprintw(stdscr, input_row + 1, 2, "You slide behind the bookcases and find yourself in a very small room with a chest");
-            strcpy(location, "hidden");
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "There are no bookcases to move");
-          }
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "Location not found");
-        }
-
-      } else if (strcmp(location, "frontroom") == 0) {
-        if (strcmp(params, "key") == 0) {
-          if (key_inventory == true) {
-            mvwprintw(stdscr, input_row + 1, 2, "You try with all your might, but the key doesn't want to open");
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "You do not have a key to open");
-          }
-        } else if (strcmp(params, "treasure") == 0) {
-          if (david == true) {
-            mvwprintw(stdscr, input_row + 1, 2, "You open the treasure... And it immediately slaps you in the face and closes");
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "You have no treasure");
-          }
-        } else if (strcmp(params, "picture") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "You slide the picture to the side, revealing a passage", params);
-          pictureopen = true;
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "You pull as hard as you can on the %s, but it just won't open", params);
-        }
-      } else if (strcmp(location, "hidden") == 0) {
-        if (strcmp(params, "chest") == 0) {
-          if (chestloose == true) {
-            mvwprintw(stdscr, input_row + 1, 2, "You found the Lost Treasure of David Spindler", params);
-            david = true;
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "The chest is really stiff", params);
-            chestloose = true;
-          }
-        } else if (strcmp(params, "door") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "Try walking through it");
-        } else if (strcmp(params, "key") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "You try with all your might, but the key doesn't want to open");
-        } else if (strcmp(params, "treasure") == 0) {
-          mvwprintw(stdscr, input_row + 1, 2, "You open the treasure... And it immediately slaps you in the face and closes");
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "There is literally nothing else in here", params);
-        }
-      } else {
-        mvwprintw(stdscr, input_row + 1, 2, "Location not found");
-      }
-
-      input_row += 2;
-      if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
-        input_row = 0;
-        setup_ui(inventory, bar,  photo, compass, roomdescription);
-      }
-
-    } else if (strcmp(main_input, "take") == 0 || strcmp(main_input, "pick") == 0) {
-
-      if (strcmp(location, "study") == 0) {
-        if (strcmp(params, "key") == 0) {
-          if (key_visibility == true && key_inventory == false) {
-            ma_engine_play_sound( & engine, "audio/sparkle.wav", NULL);
-            mvwprintw(stdscr, input_row + 1, 2, "You pick up the old key");
-            key_inventory = true;
-          } else {
-            mvwprintw(stdscr, input_row + 1, 2, "There is no key to pick up");
-          }
-        } else {
-          mvwprintw(stdscr, input_row + 1, 2, "There is no %s to pick up", params);
-        }
-
-      } else if (strcmp(location, "frontroom") == 0) {
-        mvwprintw(stdscr, input_row + 1, 2, "There is nothing to take");
-      } else {
-        mvwprintw(stdscr, input_row + 1, 2, "Location not found");
-      }
-
-      input_row += 2;
-      if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
-        input_row = 0;
-        setup_ui(inventory, bar,  photo, compass, roomdescription);
-      }
-
-    } else if (strcmp(main_input, "help") == 0) { // Check of main_input matches help
-      clear();
-      printw("------HELP SCREEN------\nCommand help:\n\n\tview/look\n\t\tViews an object.\n\t\te.g. 'view picture' would view a picture on a wall.\n\tmove/walk/run\n\t\tAllows the game character to move in a direction specified by the player.\n\t\te.g. 'move west' would move west.\n\topen\n\t\tOpens an object.\n\t\te.g. 'open drawer' would open a drawer.\n\tsave\n\t\tSaves the game.\n\ttake/pick\n\t\tTakes an object.\n\t\te.g. 'take key' would take a key.\n\thelp\n\t\tOpens this help screen.\n\texit\n\t\tSimply exits the game.\n\n\nPress enter 3 times to exit this screen.\n");
-      getstr(main_input); // idk why this is here but the program doesn't work when i take it away soooo...
-      getchar(); // Waits until the user presses a key
-      input_row = 0;
-      setup_ui(inventory, bar,  photo, compass, roomdescription);
-
-    } else if (strcmp(main_input, "save") == 0) {
-		save_game(input_row, name, location, key_visibility, key_inventory, bookcases, chestloose, david, pictureopen, hiddentreasure, passagetreasure, key_visibility_int, key_inventory_int, bookcases_int, chestloose_int, david_int, pictureopen_int, hiddentreasure_int, passagetreasure_int);
-		input_row += 2;
-		if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
-		input_row = 0;
-		setup_ui(inventory, bar,  photo, compass, roomdescription);
-      }
-
-    } else if (strcmp(main_input, "load") == 0) {
-      load_game(input_row, name, location, key_visibility, key_inventory, bookcases, chestloose, david, pictureopen, hiddentreasure, passagetreasure, key_visibility_int, key_inventory_int, bookcases_int, chestloose_int, david_int, pictureopen_int, hiddentreasure_int, passagetreasure_int);
-      input_row = 0;
-      setup_ui(inventory, bar,  photo, compass, roomdescription);
-      input_row += 2;
-      if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
-        input_row = 0;
-        setup_ui(inventory, bar,  photo, compass, roomdescription);
-      }
-    } else if (main_input[0] == '\0' || isspace(main_input[0])) {
-      mvwprintw(stdscr, input_row + 1, 2, "I'm not psychic you know");
-      input_row += 2;
-      if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
-        input_row = 0;
-        setup_ui(inventory, bar,  photo, compass, roomdescription);
-      }
+    if (strcmp(mainInput, "exit") == 0) {
+	  mvwprintw(stdscr, inputRow + 1, 2, "Exiting game");
+      exitFlag = true;
+    } else if (strcmp(mainInput, "name") == 0) {
+      (void)mvwprintw(stdscr, inputRow + 1, 2, "Enter new name: ");
+      getnstr(character.name, 20);
+      toLowerCase(character.name);
+      strcpy(character.namehold, character.name);
+      xorCipher(character.name, 42);
+      firstToUpper(character.namehold);
+      inputRow += 2;
+    } else if (strcmp(mainInput, "save") == 0) {
+    (void)mvwprintw(stdscr, inputRow + 1, 2, "Saving game to gamesave.json");
+    inputRow++;
+    int success = saveGame(system, character);
+    if (!success) {
+      (void)mvwprintw(stdscr, inputRow + 1, 2, "Save succeeded");
     } else {
-      mvwprintw(stdscr, input_row + 1, 2, "Try using one of the commands below", main_input); // Print the user main_input on the screen
-      input_row += 2;
-      if (input_row + 1 == LINES - 4 || input_row + 1 == LINES - 3) {
-        input_row = 0;
-        setup_ui(inventory, bar,  photo, compass, roomdescription);
-      }
+      (void)mvwprintw(stdscr, inputRow + 1, 2, "Save failed");
+      (void)beep();
+    }
+    inputRow += 2;
+  } else if (strcmp(mainInput, "load") == 0) {
+    (void)mvwprintw(stdscr, inputRow + 1, 2, "Loading game from gamesave.json");
+    inputRow++;
+    int success = loadGame(&system, &character);
+    if (!success) {
+      (void)mvwprintw(stdscr, inputRow + 1, 2, "Load succeeded");
+    } else {
+      (void)mvwprintw(stdscr, inputRow + 1, 2, "Load failed");
+      (void)beep();
+    }
+    inputRow += 2;
+  } else {
+      inputRow = processInput(inputRow, mainInput, parameters, exitFlag, character, system, window, text);
     }
 
-    refresh(); // Refresh the screen
+    mainInput[0] = '\0';
+    parameters[0] = '\0';
+
+    refresh();
+
+    if (inputRow + 1 == LINES - 4 || inputRow + 1 == LINES - 3) {
+      inputRow = 0;
+      loadText(window, system, character, text);
+    }
   }
-  exit:
-  free(str); // free the allocated memory
-  delwin(bar); // Delete the bar
-  delwin(compass);
-  delwin(inventory);
-  delwin(roomdescription);
-  delwin(photo);
-  endwin(); // Clears ncurses and returns back to previous state
-  return 0; // Gives successful completion code
+
+  sleep(2);
+  delwin(window.bar);  // Delete the window.bar
+  delwin(window.compass);
+  delwin(window.inventory);
+  delwin(window.roomdescription);
+  delwin(window.photo);
+  endwin();  // Clears ncurses and returns back to previous state
+  return 0;  // Gives successful completion code
 }

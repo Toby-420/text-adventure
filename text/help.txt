@@ -1,0 +1,34 @@
+------HELP SCREEN------
+
+Command help:
+
+	move [direction]
+			Move the character in that direction
+			Requires one argument of direction
+			Has synonyms walk, run, enter, go, cd
+			For example: "move north" would move the character north
+
+	view [subject]
+			View something the player has access to
+			Requires one argument of subject
+			Can either be the room or item in inventory
+			For example: "view room" would view the room
+
+	name
+			Prompts user for a new name
+
+	help
+			Brings up this help screen
+
+	clear
+			If the game's text has messed up, this will reset the interface
+
+	save/load
+			Saves or loads the game
+			Load can also be passed as an argument from the command line
+			For example: "play load" would load the game's save
+
+	exit
+			Exits the game (does not save)
+
+Press any key to exit this screen.
