@@ -60,12 +60,7 @@
 
       inputRow += 2;
 
-    } else if (strcmp(mainInput, "cory-nonce") == 0) {
-      ma_engine_play_sound( & engine, "audio/cory-nonce.wav", NULL);
-
-      inputRow++;
-
-    }
+    } 
 	
 	
 	
@@ -139,51 +134,8 @@
         }
 
       } else if (strcmp(parameters, "north") == 0) {
-        if (strcmp(character.location, "study") == 0) {
-          inputRow = 0;
-          setupUi(window);
-          mvwprintw(stdscr, inputRow, 0, "> [%s] %s %s", character.location, mainInput, parameters);
-          mvwprintw(stdscr, inputRow + 1, 2, "You fall out of the window and die");
-          mvwprintw(stdscr, LINES - 2, 0, "EXITING PROGRAM");
-          mvwprintw(window.photo, 3, 2, "             _..~~~~~~~.._           ");
-          mvwprintw(window.photo, 4, 2, "         .:~'             '~:.       ");
-          mvwprintw(window.photo, 5, 2, "       .:                     :.     ");
-          mvwprintw(window.photo, 6, 2, "      :                         :    ");
-          mvwprintw(window.photo, 7, 2, "     .'                         '.   ");
-          mvwprintw(window.photo, 8, 2, "    .:                           :.  ");
-          mvwprintw(window.photo, 9, 2, "    : :                         : :  ");
-          mvwprintw(window.photo, 10, 2, "    | :   _____         _____   : |  ");
-          mvwprintw(window.photo, 11, 2, "    |  '/~     ~   .   ~     ~\'  |  ");
-          mvwprintw(window.photo, 12, 2, "    |  ~  .-~~~~~. | .~~~~~-.  ~  |  ");
-          mvwprintw(window.photo, 13, 2, "     |   |        }:{        |   |   ");
-          mvwprintw(window.photo, 14, 2, "     |   !       / | \\       !   |   ");
-          mvwprintw(window.photo, 15, 2, "     .~   \\_..--' .^. '--.._/  ~.    ");
-          mvwprintw(window.photo, 16, 2, "      |        :' /|\\ ':        |    ");
-          mvwprintw(window.photo, 17, 2, "       \\~~.__     U^U     __.~~/     ");
-          mvwprintw(window.photo, 18, 2, "        \\I \\#\\           /#/ I/      ");
-          mvwprintw(window.photo, 19, 2, "         | |#~\\_________/~#| |       ");
-          mvwprintw(window.photo, 20, 2, "         | |###|||_|_|||###| |       ");
-          mvwprintw(window.photo, 21, 2, "         |  \\,#|||||||||#,/  |       ");
-          mvwprintw(window.photo, 22, 2, "          \\   '~~~~~~~~~'   /        ");
-          mvwprintw(window.photo, 23, 2, "           \\    .     .    /         ");
-          mvwprintw(window.photo, 24, 2, "            \\.     ^     ./          ");
-          mvwprintw(window.photo, 25, 2, "              '~~~~^~~~~'            ");
-          wrefresh(window.photo);
-          mvwprintw(window.roomdescription, 3, 2, "You carelessly walked into the  ");
-          mvwprintw(window.roomdescription, 4, 2, "window and fell out, collapsing "); // Add description about front room into the description box
-          mvwprintw(window.roomdescription, 5, 2, "onto the rose bush.             ");
-          mvwprintw(window.roomdescription, 6, 2, "Well done. You managed to die   ");
-          mvwprintw(window.roomdescription, 7, 2, "in a room without any enemies.  ");
-          mvwprintw(window.roomdescription, 8, 2, "*HEY EVERYBODY! %s              ", character.namehold);
-          mvwprintw(window.roomdescription, 9, 2, "MANAGED TO DIE WITHOUT ANY         ");
-          mvwprintw(window.roomdescription, 10, 2, "ENEMIES! LET'S GIVE A SLOW CLAP* ");
-          wrefresh(window.roomdescription);
-          refresh(); // Refresh the screen
-          
-		  exitFlag = true;
-
-        } else if (strcmp(character.location, "passage") == 0) {
-          inputRow = 0;
+        if (strcmp(character.location, "study") == 0) {}
+		else if (strcmp(character.location, "passage") == 0) {
           setupUi(window);
           mvwprintw(stdscr, inputRow, 0, "> [%s] %s %s", character.location, mainInput, parameters);
           mvwprintw(stdscr, inputRow + 1, 2, "You move back into the front room");
@@ -249,14 +201,14 @@
       if (strcmp(character.location, "study") == 0) {
         if (strcmp(parameters, "drawer") == 0) {
           if (system.keyIsVisible == false) {
-            ma_engine_play_sound( & engine, "audio/drawer.wav", NULL);
+            ma_engine_play_sound( & engine, "audio/drawer.mp3", NULL);
             mvwprintw(stdscr, inputRow + 1, 2, "You open the old, dusty drawer whose handle is nearly broken and you find an old, but shiny key");
             system.keyIsVisible = true;
           } else {
             mvwprintw(stdscr, inputRow + 1, 2, "There is nothing else in here. Except some Opal Fruit wrappers");
           }
         } else if (strcmp(parameters, "window") == 0) {
-          ma_engine_play_sound( & engine, "audio/wind.wav", NULL);
+          ma_engine_play_sound( & engine, "audio/wind.mp3", NULL);
           mvwprintw(stdscr, inputRow + 1, 2, "You open the creaky window and smell a gust of stale air.");
           inputRow++;
           mvwprintw(stdscr, inputRow + 1, 2, "It seems like it has been closed for years. There is a very sharp looking");
@@ -348,7 +300,7 @@
       if (strcmp(character.location, "study") == 0) {
         if (strcmp(parameters, "key") == 0) {
           if (system.keyIsVisible == true && system.keyIsInventory == false) {
-            ma_engine_play_sound( & engine, "audio/sparkle.wav", NULL);
+            ma_engine_play_sound( & engine, "audio/sparkle.mp3", NULL);
             mvwprintw(stdscr, inputRow + 1, 2, "You pick up the old key");
             system.keyIsInventory = true;
           } else {

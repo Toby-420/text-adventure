@@ -56,3 +56,8 @@ dkms.conf
 *.7z
 *.rar
 *.tar*
+
+# Custom to this
+history.txt
+savefile.json
+gamesave.txt

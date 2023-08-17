@@ -1,4 +1,10 @@
 #define MINIAUDIO_IMPLEMENTATION
+#define MAX_HISTORY_ITEMS 1000
+#define MAX_COMMAND_LENGTH 20
+#define FRONT_ROOM 0
+#define STUDY 1
+#define HIDDEN_ROOM 2
+#define PASSAGE 3
 #include <ctype.h>
 #include <curses.h>
 #include <json-c/json.h>
@@ -10,12 +16,6 @@
 #include <unistd.h>
 #include <windows.h>
 #include "miniaudio.h"
-#define MAX_HISTORY_ITEMS 1000
-#define MAX_COMMAND_LENGTH 20
-#define FRONT_ROOM 0
-#define STUDY 1
-#define HIDDEN_ROOM 2
-#define PASSAGE 3
 
 /*
 
@@ -77,6 +77,18 @@ struct MainCharacter {
   // bool overpowered;
 };
 
+void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+    ma_decoder* pDecoder = (ma_decoder*)pDevice->pUserData;
+    if (pDecoder == NULL) {
+        return;
+    }
+
+    /* Reading PCM frames will loop based on what we specified when called ma_data_source_set_looping(). */
+    ma_data_source_read_pcm_frames(pDecoder, pOutput, frameCount, NULL);
+
+    (void)pInput;
+}
+
 void setupUi(struct Windows window) {
   (void)clear();
   (void)wclear(window.bar);
@@ -102,8 +114,10 @@ void setupUi(struct Windows window) {
   (void)refresh();
 }
 
-void loadText(struct Windows window, struct System system, struct MainCharacter character, struct WindowText text) {
-  setupUi(window);
+void loadText(struct Windows window, struct System system, struct MainCharacter character, struct WindowText text, bool setupCheck) {
+  if (setupCheck == true) {
+    setupUi(window);
+  }
 
   window.bar = newwin(1, COLS, LINES - 1, 0);
   wborder(window.bar, '|', '|', '-', '-', '+', '+', '+', '+');
@@ -139,8 +153,8 @@ void loadText(struct Windows window, struct System system, struct MainCharacter 
   }
 
   if (strcmp(character.location, "front room") == 0) {
-    mvwprintw(window.compass, 5, 2, "WEST ");
-    mvwprintw(window.compass, 5, 11, "EAST ");
+    mvwprintw(window.compass, 5, 2, "WEST");
+    mvwprintw(window.compass, 5, 11, "EAST");
 
     if (system.pictureIsOpen == true) {
       mvwprintw(window.compass, 7, 6, "SOUTH*");
@@ -246,6 +260,7 @@ void xorCipher(char *input, int key) {
 int saveGame(struct System system, struct MainCharacter character) {
   json_object *root = json_object_new_object();
   (void)json_object_object_add(root, "location", json_object_new_string(character.location));
+  (void)json_object_object_add(root, "locationNumber", json_object_new_int(character.locationNumber));
   (void)json_object_object_add(root, "name", json_object_new_string(character.name));          // ciphered
   (void)json_object_object_add(root, "namehold", json_object_new_string(character.namehold));  // readable
   (void)json_object_object_add(root, "nameAsked", json_object_new_boolean(system.nameAsked));
@@ -296,6 +311,7 @@ int loadGame(struct System *system, struct MainCharacter *character) {
   }
 
   strcpy(character->location, json_object_get_string(json_object_object_get(root, "location")));
+  character->locationNumber = json_object_get_int(json_object_object_get(root, "locationNumber"));
   strcpy(character->name, json_object_get_string(json_object_object_get(root, "name")));
   strcpy(character->namehold, json_object_get_string(json_object_object_get(root, "namehold")));
   system->nameAsked = json_object_get_boolean(json_object_object_get(root, "nameAsked"));
@@ -304,21 +320,21 @@ int loadGame(struct System *system, struct MainCharacter *character) {
   return 0;
 }
 
-char *handleLocation(int locationNumber) {
-  char *location = NULL;
+const char* handleLocation(int locationNumber) {
+  const char* location = NULL;
 
   switch (locationNumber) {
     case 0:
-      location = strdup("front room");
+      location = "front room";
       break;
     case 1:
-      location = strdup("study");
+      location = "study";
       break;
     case 2:
-      location = strdup("hidden");
+      location = "hidden";
       break;
     case 3:
-      location = strdup("passage");
+      location = "passage";
       break;
     default:
       break;
@@ -327,66 +343,76 @@ char *handleLocation(int locationNumber) {
   return location;
 }
 
-int handleViewCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window) { return 0; }
+int handleViewCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window, struct WindowText text) { return 0; }
 
-int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window) {
+int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window, struct WindowText text) {
   if (parameters[0] == 'n') {
-    mvwprintw(stdscr, inputRow + 1, 2, "North chosen");
+    if (character.locationNumber == FRONT_ROOM) {
+      mvwprintw(stdscr, inputRow + 1, 2, "You can't go through the window");
+    } else if (character.locationNumber == STUDY) {
+      loadText(window, system, character, text, false);
+      mvwprintw(stdscr, inputRow + 1, 2, "You carelessly fall out of the window onto the rose bush and die");
+      mvwprintw(stdscr, inputRow + 2, 2, "Well done. You died where there were no enemies");
+	  mvwprintw(window.photo, 3, 2, text.asciiSkullContents);
+	  wrefresh(window.photo);
+	  
+    } else if (character.locationNumber == HIDDEN_ROOM) {
+      mvwprintw(stdscr, inputRow + 1, 2, "You walk into the wall and headbutt it. Wall -10hp");
+    } else if (character.locationNumber == PASSAGE) {
+	  inputRow = 0;
+      loadText(window, system, character, text, true);
+	  mvwprintw(stdscr, inputRow, 0, "> [%s@%s] %s %s", character.namehold, character.location, mainInput, parameters);
+      mvwprintw(stdscr, inputRow + 1, 2, "You move into the front room");
+	  character.locationNumber = 0;
+	  wrefresh(window.compass);
+    } else {
+      mvwprintw(stdscr, inputRow + 1, 2, "Location not found");
+    }
   } else if (parameters[0] == 'e') {
-    mvwprintw(stdscr, inputRow + 1, 2, "East chosen");
     if (character.locationNumber == FRONT_ROOM) {
     } else if (character.locationNumber == STUDY) {
     } else if (character.locationNumber == HIDDEN_ROOM) {
+    } else if (character.locationNumber == PASSAGE) {
+    } else {
+    }
+  } else if (parameters[0] == 's') {
+    if (character.locationNumber == FRONT_ROOM) {
+    } else if (character.locationNumber == STUDY) {
+    } else if (character.locationNumber == HIDDEN_ROOM) {
+    } else if (character.locationNumber == PASSAGE) {
+    } else {
+    }
+  } else if (parameters[0] == 'w') {
+    if (character.locationNumber == FRONT_ROOM) {
+    } else if (character.locationNumber == STUDY) {
+    } else if (character.locationNumber == HIDDEN_ROOM) {
+    } else if (character.locationNumber == PASSAGE) {
     } else {
     }
   } else if (strcmp(parameters, "passage") == 0 || strcmp(parameters, "picture") == 0) {
-    if (character.locationNumber == HIDDEN_ROOM) {
+    if (character.locationNumber == FRONT_ROOM) {
     } else if (character.locationNumber == STUDY) {
+    } else if (character.locationNumber == HIDDEN_ROOM) {
+    } else if (character.locationNumber == PASSAGE) {
     } else {
     }
   } else if (strcmp(parameters, "bookcases") == 0 || strcmp(parameters, "bookcase") == 0) {
-  } else if (parameters[0] == 'w') {
-    mvwprintw(stdscr, inputRow + 1, 2, "West chosen");
+    if (character.locationNumber == FRONT_ROOM) {
+    } else if (character.locationNumber == STUDY) {
+    } else if (character.locationNumber == HIDDEN_ROOM) {
+    } else if (character.locationNumber == PASSAGE) {
+    } else {
+    }
   } else {
     mvwprintw(stdscr, inputRow + 1, 2, "You cannot move %s however much you try", parameters);
   }
 
-  return 0;
+  return character.locationNumber;
 }
 
-int handleOpenCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window) { return 0; }
+int handleOpenCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window, struct WindowText text) { return 0; }
 
-int handleTakeCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window) { return 0; }
-
-int processInput(int inputRow, char *mainInput, char *parameters, bool exitFlag, struct MainCharacter character, struct System system, struct Windows window, struct WindowText text) {
-  if (strcmp(mainInput, "view") == 0 || strcmp(mainInput, "look") == 0) {
-    handleViewCommand(inputRow, mainInput, parameters, character, system, window);
-    inputRow += 2;
-  } else if (strcmp(mainInput, "move") == 0 || strcmp(mainInput, "walk") == 0 || strcmp(mainInput, "run") == 0 || strcmp(mainInput, "enter") == 0 || strcmp(mainInput, "go") == 0 || strcmp(mainInput, "cd") == 0) {
-    handleMoveCommand(inputRow, mainInput, parameters, character, system, window);
-    inputRow += 2;
-  } else if (strcmp(mainInput, "open") == 0 || strcmp(mainInput, "shift") == 0) {
-    handleOpenCommand(inputRow, mainInput, parameters, character, system, window);
-    inputRow += 2;
-  } else if (strcmp(mainInput, "take") == 0 || strcmp(mainInput, "pick") == 0) {
-    handleTakeCommand(inputRow, mainInput, parameters, character, system, window);
-    inputRow += 2;
-  } else if (strcmp(mainInput, "help") == 0) {
-    clear();
-    printw(text.helpFileContents);
-    wrefresh(stdscr);
-    getch();
-    inputRow = 0;
-    setupUi(window);
-  } else if (mainInput[0] == '\0' || isspace(mainInput[0])) {
-    mvwprintw(stdscr, inputRow + 1, 2, "I'm not psychic you know");
-    inputRow += 2;
-  } else {
-    mvwprintw(stdscr, inputRow + 1, 2, "Try using one of the commands below");
-    inputRow += 2;
-  }
-  return inputRow;
-}
+int handleTakeCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter character, struct System system, struct Windows window, struct WindowText text) { return 0; }
 
 int main(int argc, char *argv[]) {
   HWND consoleWindow = GetConsoleWindow();  // Get handle to console window
@@ -397,8 +423,28 @@ int main(int argc, char *argv[]) {
   struct System system;
   struct WindowText text;
 
+  ma_result result;
+  ma_decoder decoder;
+  ma_device_config deviceConfig;
+  ma_device device;
   ma_engine engine;
   ma_engine_init(NULL, &engine);
+  
+  const char audioFile[] = "audio\\track1.mp3";
+
+  result = ma_decoder_init_file(audioFile, NULL, &decoder);
+  if (result != MA_SUCCESS) {
+	printf("Audio file not found in %s", audioFile);
+	return -2;
+  }
+  
+  ma_data_source_set_looping(&decoder, MA_TRUE);
+  deviceConfig = ma_device_config_init(ma_device_type_playback);
+  deviceConfig.playback.format   = decoder.outputFormat;
+  deviceConfig.playback.channels = decoder.outputChannels;
+  deviceConfig.sampleRate        = decoder.outputSampleRate;
+  deviceConfig.dataCallback      = data_callback;
+  deviceConfig.pUserData         = &decoder;
 
   initscr();  // Start ncurses
   keypad(stdscr, TRUE);
@@ -460,12 +506,12 @@ int main(int argc, char *argv[]) {
   text.asciiPassageContents = readFileContents("ascii\\passage.txt");
   text.textPassageContents = readFileContents("text\\passage.txt");
   text.helpFileContents = readFileContents("text\\help.txt");
-  
+
   if (argc > 1 && strcmp(argv[1], "load") == 0) {
     loadGame(&system, &character);
-    loadText(window, system, character, text);
+    loadText(window, system, character, text, true);
   } else {
-    loadText(window, system, character, text);
+    loadText(window, system, character, text, true);
   }
 
   while (!exitFlag) {
@@ -497,7 +543,7 @@ int main(int argc, char *argv[]) {
 
       (void)firstToUpper(character.namehold);
 
-      loadText(window, system, character, text);
+      loadText(window, system, character, text, true);
 
       mvwprintw(stdscr, inputRow - 1, 0, "\t\t\t\tWelcome to The Room of the Locked Door");
       inputRow++;
@@ -513,7 +559,18 @@ int main(int argc, char *argv[]) {
       (void)echo();
     }
     if (system.soundPlayed == false) {
-      PlaySound("audio\\track1.wav", NULL, SND_FILENAME | SND_ASYNC | SND_LOOP);
+		if (ma_device_init(NULL, &deviceConfig, &device) != MA_SUCCESS) {
+			printf("Failed to open playback device.\n");
+			ma_decoder_uninit(&decoder);
+			return -3;
+		}
+
+		if (ma_device_start(&device) != MA_SUCCESS) {
+			printf("Failed to start playback device.\n");
+			ma_device_uninit(&device);
+			ma_decoder_uninit(&decoder);
+			return -4;
+		}
       system.soundPlayed = true;
     }
     mvwprintw(stdscr, inputRow, 0, "> [%s@%s] ", character.namehold, character.location);
@@ -542,8 +599,23 @@ int main(int argc, char *argv[]) {
     }
 
     if (strcmp(mainInput, "exit") == 0) {
-	  mvwprintw(stdscr, inputRow + 1, 2, "Exiting game");
+      mvwprintw(stdscr, inputRow + 1, 2, "Exiting game");
       exitFlag = true;
+    } else if (strcmp(mainInput, "view") == 0 || strcmp(mainInput, "look") == 0) {
+      handleViewCommand(inputRow, mainInput, parameters, character, system, window, text);
+      inputRow += 2;
+    } else if (strcmp(mainInput, "move") == 0 || strcmp(mainInput, "walk") == 0 || strcmp(mainInput, "run") == 0 || strcmp(mainInput, "enter") == 0 || strcmp(mainInput, "go") == 0 || strcmp(mainInput, "cd") == 0) {
+      handleMoveCommand(inputRow, mainInput, parameters, character, system, window, text);
+      inputRow += 2;
+    } else if (strcmp(mainInput, "open") == 0 || strcmp(mainInput, "shift") == 0) {
+      handleOpenCommand(inputRow, mainInput, parameters, character, system, window, text);
+      inputRow += 2;
+    } else if (strcmp(mainInput, "take") == 0 || strcmp(mainInput, "pick") == 0) {
+      handleTakeCommand(inputRow, mainInput, parameters, character, system, window, text);
+      inputRow += 2;
+    } else if (strcmp(mainInput, "cory-nonce") == 0) {
+      ma_engine_play_sound(&engine, "audio/cory-nonce.mp3", NULL);
+      inputRow++;
     } else if (strcmp(mainInput, "name") == 0) {
       (void)mvwprintw(stdscr, inputRow + 1, 2, "Enter new name: ");
       getnstr(character.name, 20);
@@ -553,30 +625,44 @@ int main(int argc, char *argv[]) {
       firstToUpper(character.namehold);
       inputRow += 2;
     } else if (strcmp(mainInput, "save") == 0) {
-    (void)mvwprintw(stdscr, inputRow + 1, 2, "Saving game to gamesave.json");
-    inputRow++;
-    int success = saveGame(system, character);
-    if (!success) {
-      (void)mvwprintw(stdscr, inputRow + 1, 2, "Save succeeded");
+      (void)mvwprintw(stdscr, inputRow + 1, 2, "Saving game to gamesave.json");
+      inputRow++;
+      int success = saveGame(system, character);
+      if (!success) {
+        (void)mvwprintw(stdscr, inputRow + 1, 2, "Save succeeded");
+      } else {
+        (void)mvwprintw(stdscr, inputRow + 1, 2, "Save failed");
+        (void)beep();
+      }
+      inputRow += 2;
+    } else if (strcmp(mainInput, "load") == 0) {
+      (void)mvwprintw(stdscr, inputRow + 1, 2, "Loading game from gamesave.json");
+      inputRow++;
+      int success = loadGame(&system, &character);
+      if (!success) {
+        (void)mvwprintw(stdscr, inputRow + 1, 2, "Load succeeded");
+      } else {
+        (void)mvwprintw(stdscr, inputRow + 1, 2, "Load failed");
+        (void)beep();
+      }
+      inputRow += 2;
+    } else if (strcmp(mainInput, "help") == 0) {
+      clear();
+      printw(text.helpFileContents);
+      wrefresh(stdscr);
+      getch();
+      inputRow = 0;
+      setupUi(window);
+    } else if (mainInput[0] == '\0' || isspace(mainInput[0])) {
+      mvwprintw(stdscr, inputRow + 1, 2, "I'm not psychic you know");
+      inputRow += 2;
     } else {
-      (void)mvwprintw(stdscr, inputRow + 1, 2, "Save failed");
-      (void)beep();
+      mvwprintw(stdscr, inputRow + 1, 2, "Try using one of the commands below");
+      inputRow += 2;
     }
-    inputRow += 2;
-  } else if (strcmp(mainInput, "load") == 0) {
-    (void)mvwprintw(stdscr, inputRow + 1, 2, "Loading game from gamesave.json");
-    inputRow++;
-    int success = loadGame(&system, &character);
-    if (!success) {
-      (void)mvwprintw(stdscr, inputRow + 1, 2, "Load succeeded");
-    } else {
-      (void)mvwprintw(stdscr, inputRow + 1, 2, "Load failed");
-      (void)beep();
-    }
-    inputRow += 2;
-  } else {
-      inputRow = processInput(inputRow, mainInput, parameters, exitFlag, character, system, window, text);
-    }
+	
+	strcpy(character.location, handleLocation(character.locationNumber));
+      loadText(window, system, character, text, false);
 
     mainInput[0] = '\0';
     parameters[0] = '\0';
@@ -585,7 +671,7 @@ int main(int argc, char *argv[]) {
 
     if (inputRow + 1 == LINES - 4 || inputRow + 1 == LINES - 3) {
       inputRow = 0;
-      loadText(window, system, character, text);
+      loadText(window, system, character, text, true);
     }
   }
 
