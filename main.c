@@ -9,7 +9,6 @@
 #include <string.h>
 #include <unistd.h>
 #include <windows.h>
-
 #include "miniaudio.h"
 #define MAX_HISTORY_ITEMS 1000
 #define MAX_COMMAND_LENGTH 20
