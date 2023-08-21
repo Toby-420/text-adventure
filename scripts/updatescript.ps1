@@ -10,7 +10,7 @@ if ($latestRelease.StatusCode -eq 200) {
     Write-Host "Latest version: $newVersion"
 
     if ($currentVersion -lt $newVersion) {
-        $response = Read-Host "A new version is available. Do you want to go to the website to download the latest version? (Y/N)"
+        $response = Read-Host "A new version is available. Do you want to download the latest version? (Y/N)"
         if ($response.ToLower() -eq "y") {
             $latestReleaseUrl = ($latestReleaseJson.assets | Select-Object -First 1).browser_download_url
             Write-Host "Downloading latest version from $latestReleaseUrl"

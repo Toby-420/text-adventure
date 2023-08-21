@@ -1,2 +1,2 @@
 @echo off
-powershell ./updatescript.ps1
+powershell ./scripts/updatescript.ps1

@@ -1,6 +1,7 @@
 {
-  "location":"front room",
-  "name":"^OY^",
-  "namehold":"Test",
+  "location":"study",
+  "locationNumber":1,
+  "name":"^EHS",
+  "namehold":"Toby",
   "nameAsked":true
 }
