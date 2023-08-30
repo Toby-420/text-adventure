@@ -8,11 +8,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
 #include <windows.h>
 #include "miniaudio.h"
 
 #define MAX_HISTORY_ITEMS 1000
 #define MAX_COMMAND_LENGTH 20
+#define IRRELEVANT -1
 #define FRONT_ROOM 0
 #define STUDY 1
 #define HIDDEN_ROOM 2
@@ -61,13 +63,13 @@ struct System {
   bool nameAsked;
   bool keyIsVisible;
   bool keyIsInventory;
+  bool davidIsInventory;
+  bool davidIsVisible;
   bool bookcaseIsLoose;
-  bool davidTreasure;
   bool pictureIsOpen;
   bool hiddenRoomTreasure;
   bool passageTreasure;
   bool soundPlayed;
-  int inventoryStringPlace;
 };
 
 struct MainCharacter {
@@ -121,6 +123,82 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
     (void)pInput;
 }
 
+void randomMovementString(int location, bool insulting, int inputRow) {
+	srand(time(NULL));
+	char insultingResponsesForWalls[5][255] = {
+		"You walk into the wall and headbutt it. Wall -10hp",
+		"How does the wall taste?",
+		"You must have smashed your head on these walls so many times now",
+		"Nice wall, eh?",
+		"Haiyaa. You are bad at this"
+	};
+	char normalResponsesForWalls[5][255] = {
+		"You walk into the wall",
+		"The path is blocked in that direction",
+		"It's a dead end in that direction",
+		"You can't go that way",
+		"Nope, can't go that way"
+	};
+	char insultingResponsesForSmallRoom[5][255] = {
+		"I guess small spaces are not easy to navigate",
+		"Your eyes are open, right?",
+		"Well, if walking into walls was an art form, you'd be a master by now",
+		"Wow, you managed to pick the one direction that's off-limits. Impressive",
+		"You're like a homing pigeon for wrong paths, aren't you?"
+	};
+	char normalResponsesForSmallRoom[5][255] = {
+		"You can practically feel the wall's disappointment as you run into it",
+		"You walk straight into a solid wall. Nice try",
+		"Congratulations, you've discovered a new wall texture up close",
+		"Walls tend to be rather wall-like. You've encountered one",
+		"You bump your nose against the wall"
+	};
+	int responseNumber = rand() % 5;
+	
+	if (insulting) {
+	  switch(location) {
+	  	  case FRONT_ROOM:
+	  	  case STUDY:
+		    mvwprintw(stdscr, inputRow + 1, 2, "%s", insultingResponsesForWalls[responseNumber]);
+		    break;
+	  	  case HIDDEN_ROOM:
+	  	  case FR_PASSAGE:
+		    mvwprintw(stdscr, inputRow + 1, 2, "%s", insultingResponsesForSmallRoom[responseNumber]);
+		    break;
+		  default:
+		    break;
+	  }
+	} else {
+	  switch(location) {
+	  	  case FRONT_ROOM:
+	  	  case STUDY:
+		    mvwprintw(stdscr, inputRow + 1, 2, "%s", normalResponsesForWalls[responseNumber]);
+		    break;
+	  	  case HIDDEN_ROOM:
+	  	  case FR_PASSAGE:
+		    mvwprintw(stdscr, inputRow + 1, 2, "%s", normalResponsesForSmallRoom[responseNumber]);
+		    break;
+		  default:
+		    break;
+	  }
+	}
+}
+
+void randomMovementSound(ma_engine *engine) {
+	srand(time(NULL));
+	int number = rand() % 3;
+
+	int totalLength = snprintf(NULL, 0, "audio//walking%d.mp3", number + 1) + 1;
+
+    char *combinedFilename = (char *)malloc(totalLength);
+
+    snprintf(combinedFilename, totalLength, "audio//walking%d.mp3", number);
+
+	ma_engine_play_sound(engine, combinedFilename, NULL);
+
+    free(combinedFilename);
+}
+
 void setupUi(struct Windows *window) {
   clear();
   wborder(window->bar, '|', '|', '-', '-', '+', '+', '+', '+');
@@ -132,7 +210,7 @@ void setupUi(struct Windows *window) {
   wrefresh(window->compass);
   box(window->roomdescription, 0, 0);
   wrefresh(window->roomdescription);
-  mvwprintw(window->bar, 0, 0, "Simple commands are: view, move, open, take, save, room, help, exit");
+  mvwprintw(window->bar, 0, 0, "Simple commands are: view, move, open, name, take, save, load, help, exit");
   wrefresh(window->bar);
   refresh();
 }
@@ -161,23 +239,19 @@ void loadText(struct Windows *window, struct System *system, struct MainCharacte
   mvwprintw(window->bar, 0, 0, "Commands are: view, move, open, take, save, room, help, exit");
 
   if (system->keyIsInventory) {
-    mvwprintw(window->inventory, system->inventoryStringPlace, 1, "- Old, but shiny key");
-    system->inventoryStringPlace++;
+    mvwprintw(window->inventory, 2, 1, "- Old, but shiny key");
   }
 
-  if (system->davidTreasure) {
-    mvwprintw(window->inventory, system->inventoryStringPlace, 1, "- David's lost treasure");
-    system->inventoryStringPlace++;
+  if (system->davidIsInventory) {
+    mvwprintw(window->inventory, 3, 1, "- David's lost treasure");
   }
 
   if (system->hiddenRoomTreasure) {
-    mvwprintw(window->inventory, system->inventoryStringPlace, 1, "- Treasure from the hidden room");
-    system->inventoryStringPlace++;
+    mvwprintw(window->inventory, 4, 1, "- Treasure from the hidden room");
   }
 
   if (system->passageTreasure) {
-    mvwprintw(window->inventory, system->inventoryStringPlace, 1, "- Treasure from the passage");
-    system->inventoryStringPlace++;
+    mvwprintw(window->inventory, 5, 1, "- Treasure from the passage");
   }
   
   switch(character->locationNumber) {
@@ -203,7 +277,7 @@ void loadText(struct Windows *window, struct System *system, struct MainCharacte
 	  break;
 	case HIDDEN_ROOM:
 	  mvwprintw(window->compass, 5, 2, "WEST");
-	  if (!system->davidTreasure) {
+	  if (!system->davidIsVisible) {
 	    mvwprintw(window->photo, 3, 0, text->asciiChestContents);
 	  } else {
 	    mvwprintw(window->photo, 3, 0, text->asciiChestOpenContents);
@@ -287,11 +361,11 @@ int saveGame(struct System system, struct MainCharacter character) {
   json_object_object_add(root, "namehold", json_object_new_string(character.namehold));  // readable
   // json_object_object_add(root, "overpowered", json_object_new_boolean(character.overpowered));
   json_object_object_add(root, "nameAsked", json_object_new_boolean(system.nameAsked));
-  json_object_object_add(root, "inventoryStringPlace", json_object_new_int(system.inventoryStringPlace));
   json_object_object_add(root, "keyIsVisible", json_object_new_boolean(system.keyIsVisible));
   json_object_object_add(root, "keyIsInventory", json_object_new_boolean(system.keyIsInventory));
   json_object_object_add(root, "bookcaseIsLoose", json_object_new_boolean(system.bookcaseIsLoose));
-  json_object_object_add(root, "davidTreasure", json_object_new_boolean(system.davidTreasure));
+  json_object_object_add(root, "davidIsVisible", json_object_new_boolean(system.davidIsVisible));
+  json_object_object_add(root, "davidIsInventory", json_object_new_boolean(system.davidIsInventory));
   json_object_object_add(root, "pictureisOpen", json_object_new_boolean(system.pictureIsOpen));
   json_object_object_add(root, "hiddenRoomTreasure", json_object_new_boolean(system.hiddenRoomTreasure));
   json_object_object_add(root, "passageTreasure", json_object_new_boolean(system.passageTreasure));
@@ -346,11 +420,11 @@ int loadGame(struct System *system, struct MainCharacter *character) {
   strcpy(character->namehold, json_object_get_string(json_object_object_get(root, "namehold")));
   // character->overpowered = json_object_get_boolean(json_object_object_get(root, "overpowered"));
   system->nameAsked = json_object_get_boolean(json_object_object_get(root, "nameAsked"));
-  system->inventoryStringPlace = json_object_get_int(json_object_object_get(root, "inventoryStringPlace"));
   system->keyIsVisible = json_object_get_boolean(json_object_object_get(root, "keyIsVisible"));
   system->keyIsInventory = json_object_get_boolean(json_object_object_get(root, "keyIsInventory"));
   system->bookcaseIsLoose = json_object_get_boolean(json_object_object_get(root, "bookcaseIsLoose"));
-  system->davidTreasure = json_object_get_boolean(json_object_object_get(root, "davidTreasure"));
+  system->davidIsVisible = json_object_get_boolean(json_object_object_get(root, "davidIsVisible"));
+  system->davidIsInventory = json_object_get_boolean(json_object_object_get(root, "davidIsInventory"));
   system->pictureIsOpen = json_object_get_boolean(json_object_object_get(root, "pictureIsOpen"));
   system->hiddenRoomTreasure = json_object_get_boolean(json_object_object_get(root, "hiddenRoomTreasure"));
   system->passageTreasure = json_object_get_boolean(json_object_object_get(root, "passageTreasure"));
@@ -401,7 +475,7 @@ int handleViewCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 	    mvwprintw(stdscr, inputRow + 1, 2, "There are no keys here");
 	  }
   } else if (stringIsSimilar(parameters, "treasure", 2)) {
-	  if (system->davidTreasure) {
+	  if (system->davidIsInventory || system->davidIsVisible) {
 	    mvwprintw(stdscr, inputRow + 1, 2, "It looks like a small tin with something quite dense inside");
 	  } else {
   	    mvwprintw(stdscr, inputRow + 1, 2, "You see no treasure in here");
@@ -429,7 +503,7 @@ int handleViewCommand(int inputRow, char *mainInput, char *parameters, struct Ma
           mvwprintw(stdscr, inputRow + 1, 2, "A large and ornate, yet run-down front room with a window, picture and doors to the east and west");
 		  break;
 		case STUDY:
-          mvwprintw(stdscr, inputRow + 1, 2, "A somewhat good-looking room until you see the window and drawer which are slighty broken");
+          mvwprintw(stdscr, inputRow + 1, 2, "A fancy study with bookcases along the east wall, a broken window, and a drawer");
 		  break;
 		case HIDDEN_ROOM:
           mvwprintw(stdscr, inputRow + 1, 2, "A tiny room which only has a chest in");
@@ -441,16 +515,36 @@ int handleViewCommand(int inputRow, char *mainInput, char *parameters, struct Ma
           mvwprintw(stdscr, inputRow + 1, 2, "Location not found");
 		  break;
 	  }
+  } else if (stringIsSimilar(parameters, "drawer", 2)) {
+	  switch(character->locationNumber) {
+		case FRONT_ROOM:
+          mvwprintw(stdscr, inputRow + 1, 2, "There is no drawer in here");
+		  break;
+		case STUDY:
+          mvwprintw(stdscr, inputRow + 1, 2, "A rough-looking drawer with a handle");
+		  break;
+		case HIDDEN_ROOM:
+          mvwprintw(stdscr, inputRow + 1, 2, "You can't see any drawers");
+		  break;
+		case FR_PASSAGE:
+          mvwprintw(stdscr, inputRow + 1, 2, "There is nothing but darkness in here");
+		  break;
+		default:
+          mvwprintw(stdscr, inputRow + 1, 2, "Location not found");
+		  break;
+	  }
+  } else {
+	  mvwprintw(stdscr, inputRow + 1, 2, "You cannot view the %s", parameters);
   }
 
   return inputRow;
 }
 
-int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter *character, struct System *system, struct Windows *window, struct WindowText *text, ma_engine *engine) {
+int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter *character, struct System *system, struct Windows *window, struct WindowText *text, ma_engine *engine, bool insulting) {
   if (parameters[0] == 'n') {
 	  switch(character->locationNumber) {
 		case FRONT_ROOM:
-		  mvwprintw(stdscr, inputRow + 1, 2, "You can't go through the window");
+		  randomMovementString(character->locationNumber, insulting, inputRow);
 		  break;
 		case STUDY:
 		  loadText(window, system, character, text, false);
@@ -464,13 +558,14 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		  system->exitFlag = true;
 		  break;
 		case HIDDEN_ROOM:
-		  mvwprintw(stdscr, inputRow + 1, 2, "You walk into the wall and headbutt it. Wall -10hp");
+		  randomMovementString(character->locationNumber, insulting, inputRow);
 		  break;
 		case FR_PASSAGE:
 		  inputRow = 0;
 		  character->locationNumber = FRONT_ROOM;
 		  loadText(window, system, character, text, true);
 		  mvwprintw(stdscr, inputRow, 0, "> [%s@%s] %s %s", character->namehold, character->location, mainInput, parameters);
+		  randomMovementSound(engine);
 		  mvwprintw(stdscr, inputRow + 1, 2, "You move into the front room. There is a large painting and 2 doors");
 		  wrefresh(window->compass);
 		  break;
@@ -485,6 +580,7 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		  character->locationNumber = STUDY;
 		  loadText(window, system, character, text, true);
 		  mvwprintw(stdscr, inputRow, 0, "> [%s@%s] %s %s", character->namehold, character->location, mainInput, parameters);
+		  randomMovementSound(engine);
           mvwprintw(stdscr, inputRow + 1, 2, "You move into a small study. Bookcases line the walls, along with a window overseeing the garden");
           inputRow++;
           mvwprintw(stdscr, inputRow + 1, 2, "There is a table with an old, solid oak drawer");
@@ -496,16 +592,15 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		    character->locationNumber = HIDDEN_ROOM;
 		    loadText(window, system, character, text, true);
             mvwprintw(stdscr, inputRow, 0, "> [%s@%s] %s %s", character->namehold, character->location, mainInput, parameters);
+		  randomMovementSound(engine);
             mvwprintw(stdscr, inputRow + 1, 2, "You slide behind the bookcases and find yourself in a very small room with a chest");
           } else {
-            mvwprintw(stdscr, inputRow + 1, 2, "There are no bookcases in the way. Try looking for one that can move");
+            mvwprintw(stdscr, inputRow + 1, 2, "There are some bookcases in the way. Try looking for one that can move");
           }
 		  break;
 		case HIDDEN_ROOM:
-          mvwprintw(stdscr, inputRow + 1, 2, "How does the wall taste?");
-		  break;
 		case FR_PASSAGE:
-          mvwprintw(stdscr, inputRow + 1, 2, "You must have smashed your head on these walls so many times now");
+		  randomMovementString(character->locationNumber, insulting, inputRow);
 		  break;
 		default:
 		  mvwprintw(stdscr, inputRow + 1, 2, "Location not found");
@@ -519,6 +614,7 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		    character->locationNumber = FR_PASSAGE;
 		    loadText(window, system, character, text, true);
             mvwprintw(stdscr, inputRow, 0, "> [%s@%s] %s %s", character->namehold, character->location, mainInput, parameters);
+		    randomMovementSound(engine);
             mvwprintw(stdscr, inputRow + 1, 2, "You shift your body up into the hole in the wall where the painting was");
 			inputRow++;
             mvwprintw(stdscr, inputRow + 1, 2, "It doesn't look like there is much here (No more content here in this game version)");
@@ -527,13 +623,13 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
           }
 		  break;
 		case STUDY:
-		  mvwprintw(stdscr, inputRow + 1, 2, "HEY! DON'T WALK INTO THE CAMERA!!!");
+		  randomMovementString(character->locationNumber, insulting, inputRow);
 		  break;
 		case HIDDEN_ROOM:
-		  mvwprintw(stdscr, inputRow + 1, 2, "I guess small spaces are not easy to navigate");
+		  randomMovementString(character->locationNumber, insulting, inputRow);
 		  break;
 		case FR_PASSAGE:
-		  mvwprintw(stdscr, inputRow + 1, 2, "Down bad? Down diabolical? Nah you just try to go too far south don't you");
+		  randomMovementString(character->locationNumber, insulting, inputRow);
 		  break;
 		default:
 		  mvwprintw(stdscr, inputRow + 1, 2, "Location not found");
@@ -546,7 +642,7 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
             mvwprintw(stdscr, inputRow + 1, 2, "Well done, you have completed 'The Room of the Locked Door'");
 			inputRow++;
             mvwprintw(stdscr, inputRow + 1, 2, "I hope you enjoyed your stay!");
-			if (system->davidTreasure) {
+			if (system->davidIsInventory) {
               mvwprintw(stdscr, inputRow + 1, 2, "You even found David's cake tin!");
 			}
 			system->exitFlag = true;
@@ -559,6 +655,7 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		  character->locationNumber = FRONT_ROOM;
 		  loadText(window, system, character, text, true);
 		  mvwprintw(stdscr, inputRow, 0, "> [%s@%s] %s %s", character->namehold, character->location, mainInput, parameters);
+		  randomMovementSound(engine);
 		  mvwprintw(stdscr, inputRow + 1, 2, "You move into the front room. There is a large painting and 2 doors");
 		  wrefresh(window->compass);
 		  break;
@@ -567,13 +664,14 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		  character->locationNumber = STUDY;
 		  loadText(window, system, character, text, true);
 		  mvwprintw(stdscr, inputRow, 0, "> [%s@%s] %s %s", character->namehold, character->location, mainInput, parameters);
+		  randomMovementSound(engine);
           mvwprintw(stdscr, inputRow + 1, 2, "You move into a small study. Bookcases line the walls, along with a window overseeing the garden");
           inputRow++;
           mvwprintw(stdscr, inputRow + 1, 2, "There is a table with an old, solid oak drawer");
 		  wrefresh(window->compass);
 		  break;
 		case FR_PASSAGE:
-          mvwprintw(stdscr, inputRow + 1, 2, "Nice wall, eh?");
+		  randomMovementString(character->locationNumber, insulting, inputRow);
 		  break;
 		default:
 		  mvwprintw(stdscr, inputRow + 1, 2, "Location not found");
@@ -586,6 +684,7 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
             inputRow = 0;
 		    character->locationNumber = FR_PASSAGE;
 		    mvwprintw(stdscr, inputRow, 0, "> [%s@%s] %s %s", character->namehold, character->location, mainInput, parameters);
+		    randomMovementSound(engine);
             mvwprintw(stdscr, inputRow + 1, 2, "You squeeze behind the picture, and find yourself in a small room");
 		    wrefresh(window->compass);
           } else {
@@ -615,6 +714,7 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		    character->locationNumber = HIDDEN_ROOM;
 		    loadText(window, system, character, text, true);
             mvwprintw(stdscr, inputRow, 0, "> [%s@%s] %s %s", character->namehold, character->location, mainInput, parameters);
+		    randomMovementSound(engine);
             mvwprintw(stdscr, inputRow + 1, 2, "You slide behind the bookcases and find yourself in a very small room with a chest");
           } else {
             mvwprintw(stdscr, inputRow + 1, 2, "There are some bookcases in the way. Try looking for one that can move");
@@ -649,12 +749,13 @@ int handleOpenCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 	  } else if (stringIsSimilar(parameters, "door", 2)) {
           mvwprintw(stdscr, inputRow + 1, 2, "Try walking through it");
       } else if (stringIsSimilar(parameters, "treasure", 2)) {
-	    if (system->davidTreasure) {
+	    if (system->davidIsInventory) {
 		  mvwprintw(stdscr, inputRow + 1, 2, "You open the treasure... And it immediately slaps you in the face and closes");
+		  ma_engine_play_sound(engine, "audio/slap.mp3", NULL);
 	    } else {
 		  mvwprintw(stdscr, inputRow + 1, 2, "You have no treasure");
 	    }
-	  } else if (stringIsSimilar(parameters, "picture", 2)) {
+	  } else if (stringIsSimilar(parameters, "picture", 2) || stringIsSimilar(parameters, "painting", 2)) {
 	    if (!system->pictureIsOpen) {
 		  mvwprintw(stdscr, inputRow + 1, 2, "You slide the picture to the side, revealing a passage");
           system->pictureIsOpen = true;
@@ -692,8 +793,9 @@ int handleOpenCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		  mvwprintw(stdscr, inputRow + 1, 2, "You do not have a key to open");
 	    }
 	  } else if (stringIsSimilar(parameters, "treasure", 2)) {
-	    if (system->davidTreasure) {
+	    if (system->davidIsInventory) {
 		  mvwprintw(stdscr, inputRow + 1, 2, "You open the treasure... And it immediately slaps you in the face and closes");
+		  ma_engine_play_sound(engine, "audio/slap.mp3", NULL);
 	    } else {
 		  mvwprintw(stdscr, inputRow + 1, 2, "You have no treasure");
 	    }
@@ -703,9 +805,11 @@ int handleOpenCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 	  break;
 	case HIDDEN_ROOM:
       if (stringIsSimilar(parameters, "chest", 2)) {
-		if (!system->davidTreasure) {
-          mvwprintw(stdscr, inputRow + 1, 2, "You found the Lost Treasure of David Spindler");
-          system->davidTreasure = true;
+		if (!system->davidIsVisible) {
+          mvwprintw(stdscr, inputRow + 1, 2, "You open the chest and there is a small box inside");
+          system->davidIsVisible = true;
+		} else {
+          mvwprintw(stdscr, inputRow + 1, 2, "You already opened the chest");
 		}
       } else if (stringIsSimilar(parameters, "key", 2)) {
 	    if (system->keyIsInventory) {
@@ -714,8 +818,9 @@ int handleOpenCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		  mvwprintw(stdscr, inputRow + 1, 2, "You do not have a key to open");
 	    }
 	  } else if (stringIsSimilar(parameters, "treasure", 2)) {
-	    if (system->davidTreasure) {
+	    if (system->davidIsInventory) {
 		  mvwprintw(stdscr, inputRow + 1, 2, "You open the treasure... And it immediately slaps you in the face and closes");
+		  ma_engine_play_sound(engine, "audio/slap.mp3", NULL);
 	    } else {
 		  mvwprintw(stdscr, inputRow + 1, 2, "You have no treasure");
 	    }
@@ -731,8 +836,9 @@ int handleOpenCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		  mvwprintw(stdscr, inputRow + 1, 2, "You do not have a key to open");
 	    }
 	  } else if (stringIsSimilar(parameters, "treasure", 2)) {
-	    if (system->davidTreasure) {
+	    if (system->davidIsInventory) {
 		  mvwprintw(stdscr, inputRow + 1, 2, "You open the treasure... And it immediately slaps you in the face and closes");
+		  ma_engine_play_sound(engine, "audio/slap.mp3", NULL);
 	    } else {
 		  mvwprintw(stdscr, inputRow + 1, 2, "You have no treasure");
 	    }
@@ -750,19 +856,37 @@ int handleOpenCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 int handleTakeCommand(int inputRow, char *mainInput, char *parameters, struct MainCharacter *character, struct System *system, struct Windows *window, struct WindowText *text, ma_engine *engine) {
   switch(character->locationNumber) {
 	case FRONT_ROOM:
-      mvwprintw(stdscr, inputRow + 1, 2, "There is no %s to pick up", parameters);
+	  if (stringIsSimilar(parameters, "picture", 1) || stringIsSimilar(parameters, "painting", 1)) {
+		mvwprintw(stdscr, inputRow + 1, 2, "It is too large to carry anywhere");
+	  } else {
+        mvwprintw(stdscr, inputRow + 1, 2, "There is no %s to pick up", parameters);
+	  }
 	  break;
 	case STUDY:
-	  if (system->keyIsVisible && !system->keyIsInventory) {
-		ma_engine_play_sound(engine, "audio/sparkle.mp3", NULL);
-		mvwprintw(stdscr, inputRow + 1, 2, "You pick up the old key");
-		system->keyIsInventory = true;
-	  } else {
-		mvwprintw(stdscr, inputRow + 1, 2, "There is no key to pick up");
+	  if (stringIsSimilar(parameters, "key", 1)) {
+	    if (system->keyIsVisible && !system->keyIsInventory) {
+		  ma_engine_play_sound(engine, "audio/sparkle.mp3", NULL);
+		  mvwprintw(stdscr, inputRow + 1, 2, "You pick up the old key");
+		  system->keyIsInventory = true;
+	    } else {
+	  	  mvwprintw(stdscr, inputRow + 1, 2, "There is no key to pick up");
+	    }
+      } else {
+        mvwprintw(stdscr, inputRow + 1, 2, "There is no %s to pick up", parameters);
 	  }
 	  break;
 	case HIDDEN_ROOM:
-      mvwprintw(stdscr, inputRow + 1, 2, "There is no %s to pick up", parameters);
+	  if (stringIsSimilar(parameters, "treasure", 1) || stringIsSimilar(parameters, "box", 1)) {
+	    if (system->davidIsVisible && !system->davidIsInventory) {
+		  ma_engine_play_sound(engine, "audio/metal.mp3", NULL);
+		  mvwprintw(stdscr, inputRow + 1, 2, "You pick up the treasure");
+		  system->davidIsInventory = true;
+	    } else {
+	  	  mvwprintw(stdscr, inputRow + 1, 2, "There is no treasure to pick up");
+	    }
+      } else {
+        mvwprintw(stdscr, inputRow + 1, 2, "There is no %s to pick up", parameters);
+	  }
 	  break;
 	case FR_PASSAGE:
       mvwprintw(stdscr, inputRow + 1, 2, "There is no %s to pick up", parameters);
@@ -773,8 +897,8 @@ int handleTakeCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 }
 
 int main(int argc, char *argv[]) {
-  HWND consoleWindow = GetConsoleWindow();  // Get handle to console window
-  ShowWindow(consoleWindow, SW_MAXIMIZE);   // Maximize console window
+  HWND consoleWindow = GetConsoleWindow();
+  ShowWindow(consoleWindow, SW_MAXIMIZE);
   SetConsoleTitle("The Room of the Locked Door");
 
   struct MainCharacter character;
@@ -782,17 +906,15 @@ int main(int argc, char *argv[]) {
   struct System system;
   struct WindowText text;
 
-  ma_result result;
   ma_decoder decoder;
   ma_device_config deviceConfig;
   ma_device device;
   ma_engine engine;
   ma_engine_init(NULL, &engine);
   
-  const char audioFile[] = "audio\\track1.mp3";
+  const char audioFile[] = "audio\\track0.mp3";
 
-  result = ma_decoder_init_file(audioFile, NULL, &decoder);
-  if (result != MA_SUCCESS) {
+  if (ma_decoder_init_file(audioFile, NULL, &decoder) != MA_SUCCESS) {
 	printf("Audio file not found in %s", audioFile);
 	return -2;
   }
@@ -835,18 +957,21 @@ int main(int argc, char *argv[]) {
   char mainInput[22] = " ";
   char parameters[22] = " ";
   char *token = " ";
+  bool insulting = false;
+  int currentSelection = 0;
+  int chosenOption = -1;
   system.exitFlag = false;
 
   system.nameAsked = false;
   system.keyIsVisible = false;
   system.keyIsInventory = false;
   system.bookcaseIsLoose = false;
-  system.davidTreasure = false;
+  system.davidIsVisible = false;
+  system.davidIsInventory = false;
   system.pictureIsOpen = false;
   system.hiddenRoomTreasure = false;
   system.passageTreasure = false;
   system.soundPlayed = false;
-  system.inventoryStringPlace = 2;
   character.locationNumber = 0;
 
   strcpy(character.location, "front room");
@@ -868,7 +993,7 @@ int main(int argc, char *argv[]) {
   if (argc > 1 && strcmp(argv[1], "load") == 0) {
     loadGame(&system, &character);
     loadText(&window, &system, &character, &text, true);
-  } else if (argc > 1 && strcmp(argv[1], "load") == 1 && stringIsSimilar(argv[1], "load", 2)) {
+  } else if (argc > 1 && strcmp(argv[1], "load") && stringIsSimilar(argv[1], "load", 2)) {
     printf("Did you mean 'load'");
 	return 1;
   } else {
@@ -897,12 +1022,54 @@ int main(int argc, char *argv[]) {
       strcpy(character.namehold, character.name);
 
       xorCipher(character.name, 42);
+      inputRow++;
 
       // if (strcmp(character.name, "YBSFCFS") == 0) {
       // character.overpowered = true;
       // }
 
       firstToUpper(character.namehold);
+	  
+	  mvwprintw(stdscr, inputRow + 1, 2, "Choose a response mode:");
+      while (chosenOption == -1) {
+        for (int i = 0; i < 4; i++) {
+          if (i == currentSelection) {
+            attron(A_UNDERLINE);
+          }
+
+          if (i == 0) {
+            mvprintw(i + 6, 2, "Normal");
+          } else if (i == 1) {
+            mvprintw(i + 6, 2, "Insulting");
+          }
+          attroff(A_UNDERLINE);
+        }
+
+        int ch = getch();
+
+        switch (ch) {
+          case KEY_UP:
+            currentSelection = (currentSelection + 1) % 2;
+            break;
+          case KEY_DOWN:
+            currentSelection = (currentSelection + 1) % 2;
+            break;
+          case '\n':
+            if (currentSelection == 0) {
+			  insulting = false;
+              chosenOption = 1;
+            } else if (currentSelection == 1) {
+			  insulting = true;
+              chosenOption = 2;
+            } 
+
+            break;
+          default:
+            break;
+        }
+      }
+      currentSelection = 0;
+      chosenOption = -1;
 
       loadText(&window, &system, &character, &text, true);
 
@@ -978,13 +1145,13 @@ int main(int argc, char *argv[]) {
     }
 
     if (stringIsSimilar(mainInput, "exit", 1)) {
-      mvwprintw(stdscr, inputRow + 1, 2, "Exiting game");
+      mvwprintw(stdscr, inputRow + 1, 2, "Exiting game"); 
       system.exitFlag = true;
     } else if (stringIsSimilar(mainInput, "view", 1) || stringIsSimilar(mainInput, "look", 1)) {
       inputRow = handleViewCommand(inputRow, mainInput, parameters, &character, &system, &window, &text, &engine);
       inputRow += 2;
     } else if (stringIsSimilar(mainInput, "move", 1) || stringIsSimilar(mainInput, "walk", 1) || stringIsSimilar(mainInput, "run", 1) || stringIsSimilar(mainInput, "enter", 1) || stringIsSimilar(mainInput, "go", 1) || stringIsSimilar(mainInput, "cd", 1)) {
-      inputRow = handleMoveCommand(inputRow, mainInput, parameters, &character, &system, &window, &text, &engine);
+      inputRow = handleMoveCommand(inputRow, mainInput, parameters, &character, &system, &window, &text, &engine, insulting);
       inputRow += 2;
     } else if (stringIsSimilar(mainInput, "open", 1) || stringIsSimilar(mainInput, "shift", 1)) {
       inputRow = handleOpenCommand(inputRow, mainInput, parameters, &character, &system, &window, &text, &engine);
@@ -1046,11 +1213,14 @@ int main(int argc, char *argv[]) {
     parameters[0] = '\0';
 
     refresh();
+	
 
     if (inputRow + 1 == LINES - 4 || inputRow + 1 == LINES - 3) {
       inputRow = 0;
       loadText(&window, &system, &character, &text, true);
-    }
+    } else {
+      loadText(&window, &system, &character, &text, false);
+	}
   }
 
   sleep(1);
