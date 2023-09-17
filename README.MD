@@ -8,7 +8,7 @@
 <p>Me and my Dad (who does not have a github account)</p>
 <p>I did most of the programming, and my dad helped by providing lots of ideas, ASCII art, debugging help and cans of Sanpellegrino</p>
 <h2>Credits</h2>
-<p>cory-nonce.wav - [Cory Shepherd] (https://github.com/SicariusAtlas)</p>
+<p>cory-nonce.mp3 - [Cory Shepherd] (https://github.com/SicariusAtlas)</p>
 <h2>How often will updates be posted?</h2>
 <p>Possibly every week, but I will try for at least 1 per month</p>
 <h2>Where can I donate?</h2>

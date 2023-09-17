@@ -12,9 +12,6 @@
 #include <windows.h>
 #include "miniaudio.h"
 
-#define MAX_HISTORY_ITEMS 1000
-#define MAX_COMMAND_LENGTH 20
-#define IRRELEVANT -1
 #define FRONT_ROOM 0
 #define STUDY 1
 #define HIDDEN_ROOM 2
@@ -730,8 +727,10 @@ int handleMoveCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 		  mvwprintw(stdscr, inputRow + 1, 2, "Location not found");
 		  break;
 	  }
+  } else if (parameters[0] == '\0' || isspace(parameters[0])) {
+      mvwprintw(stdscr, inputRow + 1, 2, "You decide to stay still");
   } else {
-    mvwprintw(stdscr, inputRow + 1, 2, "You cannot move %s however much you try", parameters);
+      mvwprintw(stdscr, inputRow + 1, 2, "You cannot move %s however much you try", parameters);
   }
 
   return inputRow;
