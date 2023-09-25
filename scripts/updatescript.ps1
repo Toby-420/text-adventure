@@ -1,4 +1,4 @@
-$currentVersion = (Get-Content -Path "text\currentver.txt" -Raw).Trim()
+$currentVersion = (Get-Content -Path "assets\text\currentver.txt" -Raw).Trim()
 $currentVersion = [version](([regex]'[\d.]+').Matches($currentVersion).Value)
 Write-Host "Current version: $currentVersion"
 

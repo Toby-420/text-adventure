@@ -381,7 +381,7 @@ int handleOpenCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 	case STUDY:
 	  if (stringIsSimilar(parameters, "drawer", 2)) {
 	    if (!system->keyIsVisible) {
-	  	  ma_engine_play_sound(engine, "assetsaudio/drawer.mp3", NULL);
+	  	  ma_engine_play_sound(engine, "assets/audio/drawer.mp3", NULL);
 		  mvwprintw(stdscr, inputRow + 1, 2, "You open the old, dusty drawer whose handle is nearly broken and you find an old, but shiny key");
 		  system->keyIsVisible = true;
 	    } else {
@@ -477,7 +477,7 @@ int handleTakeCommand(int inputRow, char *mainInput, char *parameters, struct Ma
 	case STUDY:
 	  if (stringIsSimilar(parameters, "key", 1)) {
 	    if (system->keyIsVisible && !system->keyIsInventory) {
-		  ma_engine_play_sound(engine, "assets/audio/sparkle.mp3", NULL);
+		  ma_engine_play_sound(engine, "assets/audio/key.mp3", NULL);
 		  mvwprintw(stdscr, inputRow + 1, 2, "You pick up the old key");
 		  system->keyIsInventory = true;
 	    } else {
