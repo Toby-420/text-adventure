@@ -249,15 +249,19 @@ int main(int argc, char *argv[]) {
 	switch (character.locationNumber) {
 	  case 0:
 	    strcpy(character.location, "front room");
+		SetConsoleTitle("The Room of the Locked Door - Front Room");
 	    break;
   	  case 1:
   	    strcpy(character.location, "study");
+		SetConsoleTitle("The Room of the Locked Door - Study");
 	    break;
 	  case 2:
 	    strcpy(character.location, "hidden");
+		SetConsoleTitle("The Room of the Locked Door - Hidden Room");
 	    break;
 	  case 3:
 	    strcpy(character.location, "passage");
+		SetConsoleTitle("The Room of the Locked Door - Hidden Passage");
 	    break;
 	  default:
 	    break;
