@@ -40,7 +40,6 @@ void toLowerCase(char *str) {
 
 void firstToUpper(char *str) {
   *str = toupper(*str);
-  // This does not have error checking as it is always called after the toLowerCase function
 }
 
 void xorCipher(char *input, int key) {

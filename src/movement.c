@@ -2,12 +2,13 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdio.h>
-#include "../include/miniaudio.h"
+#include <SDL2/SDL_mixer.h>
+#include "../include/defines.h"
 
-#define FRONT_ROOM 0
-#define STUDY 1
-#define HIDDEN_ROOM 2
-#define FR_PASSAGE 3
+extern Mix_Chunk* walkingSound0;
+extern Mix_Chunk* walkingSound1;
+extern Mix_Chunk* walkingSound2;
+extern Mix_Chunk* walkingSound3;
 
 void randomMovementString(int location, bool insulting, int inputRow) {
 	srand(time(NULL));
@@ -70,29 +71,23 @@ void randomMovementString(int location, bool insulting, int inputRow) {
 	}
 }
 
-void randomMovementSound(ma_engine *engine) {
-	srand(time(NULL));
-	int number = rand() % 3;
-
-	int totalLength = snprintf(NULL, 0, "assets/audio/walking%d.mp3", number + 1) + 1;
-
-    char *combinedFilename = (char *)malloc(totalLength);
-
-    snprintf(combinedFilename, totalLength, "assets/audio/walking%d.mp3", number);
-
-	ma_engine_play_sound(engine, combinedFilename, NULL);
-
-    free(combinedFilename);
-}
-
-void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
-    ma_decoder* pDecoder = (ma_decoder*)pDevice->pUserData;
-    if (pDecoder == NULL) {
-        return;
-    }
-
-    /* Reading PCM frames will loop based on what we specified when called ma_data_source_set_looping(). */
-    ma_data_source_read_pcm_frames(pDecoder, pOutput, frameCount, NULL);
-
-    (void)pInput;
+void randomMovementSound() {
+	int random = rand() % 3;
+	
+	switch (random) {
+		case 0:
+			Mix_PlayChannel(-1, walkingSound0, 0);
+			break;
+		case 1:
+			Mix_PlayChannel(-1, walkingSound1, 0);
+			break;
+		case 2:
+			Mix_PlayChannel(-1, walkingSound2, 0);
+			break;
+		case 3:
+			Mix_PlayChannel(-1, walkingSound3, 0);
+			break;
+		default:
+			break;
+	}
 }

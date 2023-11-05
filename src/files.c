@@ -1,7 +1,7 @@
 #include <json-c/json.h>
 #include <stdio.h>
 #include <string.h>
-#include "../include/structs.h"
+#include "../include/defines.h"
 
 int saveGame(struct System system, struct MainCharacter character) {
   json_object *root = json_object_new_object();

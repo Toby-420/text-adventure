@@ -1,6 +1,6 @@
 #include <stdbool.h>
 #include <curses.h>
-#include "../include/structs.h"
+#include "../include/defines.h"
 
 #define FRONT_ROOM 0
 #define STUDY 1
@@ -44,7 +44,7 @@ void loadText(struct Windows *window, struct System *system, struct MainCharacte
   mvwprintw(window->compass, 6, 8, "|");
   mvwprintw(window->compass, 5, 6, "-- --");
   mvwprintw(window->compass, 5, 8, "O");  // Add center of compass
-  mvwprintw(window->bar, 0, 0, "Commands are: view, move, open, take, save, room, help, exit");
+  mvwprintw(window->bar, 0, 0, "Commands are: view, move, open, take, save, clear, help, exit");
 
   if (system->keyIsInventory) {
     mvwprintw(window->inventory, 2, 1, "- Old, but shiny key");

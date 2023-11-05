@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <curses.h>
 
+typedef enum { FRONT_ROOM, STUDY, HIDDEN_ROOM, FR_PASSAGE, NUM_ROOMS } ROOMS;
+
 struct Windows {
   WINDOW *inventory;
   WINDOW *bar;
@@ -37,7 +39,6 @@ struct System {
   bool pictureIsOpen;
   bool hiddenRoomTreasure;
   bool passageTreasure;
-  bool soundPlayed;
 };
 
 struct MainCharacter {
@@ -47,5 +48,12 @@ struct MainCharacter {
   char namehold[22];
   // bool overpowered;
 };
+
+typedef struct {
+	const char asciiArtDefinitions[6][30];
+	const char roomTextDefinitions[5][30];
+	const char audioDefinitions[7][30];
+	const char randomMovementAudioDefinitions[4][30];
+} AssetDefinitions;
 
 #endif
